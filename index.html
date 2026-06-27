@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sarkari Seva Portal - Comprehensive Central & J&K Directory</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-50 font-sans text-slate-800">
+    <header class="bg-indigo-900 text-white shadow-lg sticky top-0 z-50">
+        <div class="container mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-amber-500 p-2 rounded-lg text-indigo-950 font-bold text-xl shadow">
+                    <i class="fa-solid fa-building-columns"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-extrabold tracking-wide text-amber-400">SARKARI SEVA PORTAL</h1>
+                    <p class="text-xs text-indigo-200">All Central Ministries & J&K Departments at One Place</p>
+                </div>
+            </div>
+            <div class="w-full md:w-1/3 relative">
+                <input type="text" id="searchInput" onkeyup="filterLinks()" placeholder="Search departments, schemes, jobs..." class="w-full pl-10 pr-4 py-2 rounded-full text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400 text-sm">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+            </div>
+        </div>
+    </header>
+    <section class="bg-gradient-to-r from-indigo-800 to-blue-700 text-white py-8 px-4 text-center">
+        <div class="max-w-4xl mx-auto">
+            <h2 class="text-2xl md:text-3xl font-bold mb-3">Complete Government Directory</h2>
+            <p class="text-indigo-100 text-xs md:text-sm mb-6">Central Government ke saare ministries aur J&K ke sabhi departments niche diye gaye hain.</p>
+            <div class="bg-white p-4 rounded-xl shadow-xl text-slate-800 flex flex-col sm:flex-row gap-4 items-center justify-center max-w-xl mx-auto">
+                <div class="w-full flex flex-col text-left">
+                    <label class="text-xs font-bold text-indigo-900 mb-1"><i class="fa-solid fa-map-location-dot mr-1"></i> Region Select Karein</label>
+                    <select id="regionSelect" onchange="switchRegion()" class="border border-slate-300 rounded p-2 bg-slate-50 text-sm font-semibold focus:outline-indigo-600 cursor-pointer">
+                        <option value="central">Central Government (All India Portals & Ministries)</option>
+                        <option value="jk">Jammu & Kashmir (All Departments & Sevaiye)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </section>
+    <main class="container mx-auto px-4 py-10">
+        <h3 id="sectionTitle" class="text-xl font-bold text-indigo-950 mb-6 border-b-2 border-amber-400 pb-2 inline-block">
+            Central Government Ministries & Departments
+        </h3>
+        <div id="linksGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </main>
+    <footer class="bg-slate-900 text-slate-400 py-6 text-center text-xs border-t border-slate-800">
+        <p>&copy; 2026 Sarkari Seva Portal. Fully updated with comprehensive Central & UT Directories.</p>
+    </footer>
+    <script>
+        const centralData = [
+            {
+                category: "Core Citizen Services & Utilities",
+                icon: "fa-user-check",
+                color: "amber",
+                links: [
+                    { name: "UIDAI (Aadhar Card Portal)", url: "https://uidai.gov.in/" },
+                    { name: "Income Tax Department (PAN / ITR)", url: "https://www.incometax.gov.in/" },
+                    { name: "DigiLocker Portal", url: "https://www.digilocker.gov.in/" },
+                    { name: "Passport Seva Kendra", url: "https://www.passportindia.gov.in/" },
+                    { name: "Parivahan Sarathi (Driving License)", url: "https://sarathi.parivahan.gov.in/" },
+                    { name: "Parivahan Vahan (Vehicle RC)", url: "https://vahan.parivahan.gov.in/" },
+                    { name: "National Voter Services Portal (NVSP)", url: "https://www.nvsp.in/" },
+                    { name: "PM Kisan Samman Nidhi", url: "https://pmkisan.gov.in/" },
+                    { name: "Ayushman Bharat (PM-JAY)", url: "https://pmjay.gov.in/" },
+                    { name: "National Scholarship Portal (NSP)", url: "https://scholarships.gov.in/" },
+                    { name: "LPG Gas Subsidy (My LPG)", url: "https://www.mylpg.in/" },
+                    { name: "Indian Railways (IRCTC Booking)", url: "https://www.irctc.co.in/" }
+                ]
+            },
+            {
+                category: "All-India Recruitment & Exams",
+                icon: "fa-briefcase",
+                color: "emerald",
+                links: [
+                    { name: "UPSC (Union Public Service Commission)", url: "https://www.upsc.gov.in/" },
+                    { name: "SSC (Staff Selection Commission)", url: "https://ssc.gov.in/" },
+                    { name: "IBPS (Banking Recruitment)", url: "https://www.ibps.in/" },
+                    { name: "RRB (Railway Recruitment Board)", url: "https://www.rrcb.gov.in/" },
+                    { name: "NTA (National Testing Agency)", url: "https://www.nta.ac.in/" }
+                ]
+            },
+            {
+                category: "Top Ministries (A to D)",
+                icon: "fa-building",
+                color: "blue",
+                links: [
+                    { name: "Ministry of Home Affairs (MHA)", url: "https://www.mha.gov.in/" },
+                    { name: "Ministry of Defence (MoD)", url: "https://www.mod.gov.in/" },
+                    { name: "Ministry of Finance", url: "https://finmin.nic.in/" },
+                    { name: "Ministry of External Affairs (MEA)", url: "https://www.mea.gov.in/" },
+                    { name: "Ministry of Agriculture & Farmers Welfare", url: "https://agricoop.nic.in/" },
+                    { name: "Ministry of Education (MoE)", url: "https://www.education.gov.in/" },
+                    { name: "Ministry of Health & Family Welfare", url: "https://mohfw.gov.in/" },
+                    { name: "Ministry of Corporate Affairs (MCA)", url: "https://www.mca.gov.in/" },
+                    { name: "Ministry of Civil Aviation", url: "https://www.civilaviation.gov.in/" },
+                    { name: "Ministry of Commerce and Industry", url: "https://commerce.gov.in/" }
+                ]
+            },
+            {
+                category: "Top Ministries (E to P)",
+                icon: "fa-building",
+                color: "blue",
+                links: [
+                    { name: "Ministry of Electronics & IT (MeitY)", url: "https://www.meity.gov.in/" },
+                    { name: "Ministry of Environment, Forest & Climate Change", url: "https://moef.gov.in/" },
+                    { name: "Ministry of Jal Shakti", url: "https://jalshakti-dowr.gov.in/" },
+                    { name: "Ministry of Labour & Employment", url: "https://labour.gov.in/" },
+                    { name: "Ministry of Law and Justice", url: "https://lawmin.gov.in/" },
+                    { name: "Ministry of Micro, Small & Medium Enterprises (MSME)", url: "https://msme.gov.in/" },
+                    { name: "Ministry of Petroleum and Natural Gas", url: "https://mopng.gov.in/" },
+                    { name: "Ministry of Power", url: "https://powermin.gov.in/" },
+                    { name: "Ministry of Railways", url: "https://www.indianrailways.gov.in/" }
+                ]
+            },
+            {
+                category: "Top Ministries (R to Z)",
+                icon: "fa-building",
+                color: "blue",
+                links: [
+                    { name: "Ministry of Road Transport & Highways (MoRTH)", url: "https://morth.nic.in/" },
+                    { name: "Ministry of Rural Development", url: "https://rural.nic.in/" },
+                    { name: "Ministry of Science & Technology", url: "https://dst.gov.in/" },
+                    { name: "Ministry of Skill Development & Entrepreneurship", url: "https://www.msde.gov.in/" },
+                    { name: "Ministry of Social Justice & Empowerment", url: "https://socialjustice.gov.in/" },
+                    { name: "Ministry of Textiles", url: "https://texmin.nic.in/" },
+                    { name: "Ministry of Tourism", url: "https://tourism.gov.in/" },
+                    { name: "Ministry of Tribal Affairs", url: "https://tribal.nic.in/" },
+                    { name: "Ministry of Women & Child Development", url: "https://wcd.nic.in/" },
+                    { name: "Ministry of Youth Affairs & Sports", url: "https://yas.nic.in/" }
+                ]
+            },
+            {
+                category: "Apex Bodies & Departments",
+                icon: "fa-landmark",
+                color: "purple",
+                links: [
+                    { name: "NITI Aayog", url: "https://www.niti.gov.in/" },
+                    { name: "Election Commission of India (ECI)", url: "https://eci.gov.in/" },
+                    { name: "Department of Space (ISRO)", url: "https://www.isro.gov.in/" },
+                    { name: "Department of Atomic Energy (DAE)", url: "https://dae.gov.in/" },
+                    { name: "DRDO (Defence Research)", url: "https://www.drdo.gov.in/" },
+                    { name: "Comptroller and Auditor General (CAG)", url: "https://cag.gov.in/" }
+                ]
+            }
+        ];
+
+        const jkData = [
+            {
+                category: "J&K Apex Portals & Citizen Sevaiye",
+                icon: "fa-map-pin",
+                color: "amber",
+                links: [
+                    { name: "J&K Government Official Portal", url: "https://jk.gov.in/" },
+                    { name: "e-Unnat Portal (Unified Citizen Services)", url: "https://eunnat.jk.gov.in/" },
+                    { name: "J&K Land Records (Aapki Zameen Aapki Nigrani)", url: "https://landrecords.jk.gov.in/" },
+                    { name: "JK GAD (General Administration Department)", url: "http://jkgad.nic.in/" },
+                    { name: "J&K Grievance Redressal Portal (JK-IGRAMS)", url: "https://jkgrievance.in/" },
+                    { name: "State Taxes Department J&K", url: "https://www.jkcomtax.gov.in/" }
+                ]
+            },
+            {
+                category: "J&K Recruitment & Exams",
+                icon: "fa-id-card",
+                color: "emerald",
+                links: [
+                    { name: "JKSSB (Services Selection Board)", url: "https://jkssb.nic.in/" },
+                    { name: "JKPSC (Public Service Commission)", url: "http://jkpsc.nic.in/" },
+                    { name: "J&K Police Recruitment Portal", url: "https://jkpolice.gov.in/" },
+                    { name: "BOPEE (Professional Entrance Exams)", url: "https://www.jkbopee.gov.in/" }
+                ]
+            },
+            {
+                category: "J&K Infrastructure, Power & Utilities",
+                icon: "fa-bolt",
+                color: "purple",
+                links: [
+                    { name: "JKPDD Bill Payment (BillSahuliyat)", url: "https://billsahuliyat.jkpdd.net/" },
+                    { name: "JPDCL Official (Jammu Power)", url: "http://www.jpdcl.co.in/" },
+                    { name: "KPDCL Official (Kashmir Power)", url: "http://kpdcl.jk.gov.in/" },
+                    { name: "J&K Jal Shakti Department (PHE)", url: "http://jkphe.nic.in/" },
+                    { name: "Jammu Municipal Corporation (JMC)", url: "http://jmcjammu.org/" },
+                    { name: "Srinagar Municipal Corporation (SMC)", url: "http://smcsrinagar.in/" },
+                    { name: "Public Works Department (R&B) J&K", url: "http://jkpwd.nic.in/" }
+                ]
+            },
+            {
+                category: "Education & Health Departments",
+                icon: "fa-graduation-cap",
+                color: "blue",
+                links: [
+                    { name: "JKBOSE (Board of School Education)", url: "https://jkbose.nic.in/" },
+                    { name: "Directorate of School Education Jammu", url: "http://schedujammu.nic.in/" },
+                    { name: "Directorate of School Education Kashmir", url: "http://dsek.nic.in/" },
+                    { name: "Higher Education Department J&K", url: "http://jkhighereducation.nic.in/" },
+                    { name: "Health & Medical Education Department J&K", url: "http://jkhme.pinnacle.co.in/" },
+                    { name: "Directorate of Health Services Jammu", url: "http://dhbjammu.jk.gov.in/" }
+                ]
+            },
+            {
+                category: "Other Crucial J&K Departments",
+                icon: "fa-folder-open",
+                color: "cyan",
+                links: [
+                    { name: "J&K Finance Department", url: "http://jakfinance.nic.in/" },
+                    { name: "Revenue Department J&K", url: "http://jkrevenue.nic.in/" },
+                    { name: "J&K Tourism Department", url: "https://jktourism.jk.gov.in/" },
+                    { name: "Department of Food, Civil Supplies & Consumer Affairs", url: "http://jkfcsca.gov.in/" },
+                    { name: "Directorate of Information (DIPR)", url: "http://jkinformation.nic.in/" },
+                    { name: "J&K Social Welfare Department", url: "http://jksocialwelfare.nic.in/" },
+                    { name: "Agriculture Production Department J&K", url: "http://www.jkapd.nic.in/" },
+                    { name: "Department of Forest, Ecology & Environment", url: "http://jkforest.gov.in/" }
+                ]
+            }
+        ];
+
+        function getColorClasses(color) {
+            const mappings = {
+                amber: { bg: "bg-amber-50 hover:bg-amber-100", text: "text-amber-600", dot: "text-amber-500" },
+                emerald: { bg: "bg-emerald-50 hover:bg-emerald-100", text: "text-emerald-600", dot: "text-emerald-500" },
+                blue: { bg: "bg-blue-50 hover:bg-blue-100", text: "text-blue-600", dot: "text-blue-500" },
+                purple: { bg: "bg-purple-50 hover:bg-purple-100", text: "text-purple-600", dot: "text-purple-500" },
+                cyan: { bg: "bg-cyan-50 hover:bg-cyan-100", text: "text-cyan-600", dot: "text-cyan-500" }
+            };
+            return mappings[color] || mappings.blue;
+        }
+
+        function renderData(data) {
+            const grid = document.getElementById("linksGrid");
+            grid.innerHTML = "";
+            data.forEach(cat => {
+                const colors = getColorClasses(cat.color);
+                let cardHtml = `
+                    <div class="bg-white rounded-xl shadow-md border border-slate-100 hover:shadow-xl transition-all duration-300 overflow-hidden group category-card">
+                        <div class="p-4 ${colors.bg} transition-colors flex items-center justify-between">
+                            <h4 class="font-bold text-indigo-950 text-base">${cat.category}</h4>
+                            <i class="fa-solid ${cat.icon} ${colors.text} text-xl"></i>
+                        </div>
+                        <div class="p-4 space-y-2 text-sm text-slate-600">
+                `;
+                cat.links.forEach(link => {
+                    cardHtml += `
+                        <a href="${link.url}" target="_blank" class="block hover:text-blue-600 hover:underline transition-colors py-1 border-b border-dashed border-slate-100 link-item">
+                            <i class="fa-solid fa-circle-dot text-[10px] ${colors.dot} mr-2"></i>
+                            <span class="link-name">${link.name}</span>
+                        </a>
+                    `;
+                });
+                cardHtml += `</div></div>`;
+                grid.innerHTML += cardHtml;
+            });
+        }
+
+        function switchRegion() {
+            const select = document.getElementById("regionSelect");
+            const title = document.getElementById("sectionTitle");
+            const search = document.getElementById("searchInput");
+            search.value = ""; 
+            if (select.value === "central") {
+                title.innerText = "Central Government Ministries & Departments";
+                renderData(centralData);
+            } else {
+                title.innerText = "Jammu & Kashmir UT Government & Citizen Services";
+                renderData(jkData);
+            }
+        }
+
+        function filterLinks() {
+            const input = document.getElementById("searchInput").value.toLowerCase();
+            const cards = document.getElementsByClassName("category-card");
+            for (let i = 0; i < cards.length; i++) {
+                const links = cards[i].getElementsByClassName("link-item");
+                let cardHasVisibleLink = false;
+                for (let j = 0; j < links.length; j++) {
+                    const linkName = links[j].getElementsByClassName("link-name")[0].innerText.toLowerCase();
+                    if (linkName.includes(input)) {
+                        links[j].style.display = "block";
+                        cardHasVisibleLink = true;
+                    } else {
+                        links[j].style.display = "none";
+                    }
+                }
+                const catTitle = cards[i].getElementsByTagName("h4")[0].innerText.toLowerCase();
+                if (catTitle.includes(input)) {
+                    cards[i].style.display = "block";
+                    for (let j = 0; j < links.length; j++) {
+                        links[j].style.display = "block";
+                    }
+                } else if (cardHasVisibleLink) {
+                    cards[i].style.display = "block";
+                } else {
+                    cards[i].style.display = "none";
+                }
+            }
+        }
+        renderData(centralData);
+    </script>
+</body>
+</html>
