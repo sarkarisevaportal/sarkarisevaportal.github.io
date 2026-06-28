@@ -1,0 +1,33 @@
+name: Send Sarkari Updates to Telegram
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Har ghante apne aap chalega
+  workflow_dispatch: # Aap jab chahein manual bhi chala sakte hain
+
+jobs:
+  check-rss:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch RSS and Post to Telegram
+        run: |
+          # Central Jobs ki RSS feed ka link
+          FEED_URL="https://www.indiagovtjobs.in/feeds/posts/default"
+          
+          # 1. YAHAN APNA BOT TOKEN DALEIN (Jo BotFather se mila tha)
+          BOT_TOKEN="7953477032:AAH1vJkMDNHYkzDS4WSya2MWBT25kGShS8k"
+          
+          # 2. YAHAN APNE TELEGRAM CHANNEL KA USERNAME DALEIN (@ ke saath)
+          CHANNEL_USERNAME="@sarkarisevaportaljkssb"
+          
+          # Latest post fetch karne ki script
+          LATEST_POST=$(curl -s "$FEED_URL" | grep -oPm1 "(?<=<title type='text'>)[^<]+" | head -n 1)
+          POST_LINK=$(curl -s "$FEED_URL" | grep -oPm1 "(?<=<link rel='alternate' type='text/html' href=')[^']+" | head -n 1)
+          
+          # Telegram par message bhejna
+          MESSAGE="📌 *Nayi Sarkari Update:* %0A%0A$LATEST_POST%0A%0A🔗 Check Here: $POST_LINK"
+          
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${CHANNEL_USERNAME}" \
+            -d "text=${MESSAGE}" \
+            -d "parse_mode=Markdown"
