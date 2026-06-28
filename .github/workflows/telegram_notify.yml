@@ -1,9 +1,8 @@
 name: Send Sarkari Updates to Telegram
-
 on:
   schedule:
-    - cron: '0 * * * *' # Har ghante apne aap chalega
-  workflow_dispatch: # Aap jab chahein manual bhi chala sakte hain
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   check-rss:
@@ -11,22 +10,33 @@ jobs:
     steps:
       - name: Fetch RSS and Post to Telegram
         run: |
-          # Central Jobs ki RSS feed ka link
           FEED_URL="https://www.indiagovtjobs.in/feeds/posts/default"
-          
-          # 1. YAHAN APNA BOT TOKEN DALEIN (Jo BotFather se mila tha)
-          BOT_TOKEN="7953477032:AAH1vJkMDNHYkzDS4WSya2MWBT25kGShS8k"
-          
-          # 2. YAHAN APNE TELEGRAM CHANNEL KA USERNAME DALEIN (@ ke saath)
+          BOT_TOKEN="${{ 7953477032:AAH1vJkMDNHYkzDS4WSya2MWBT25kGShS8k }}"
           CHANNEL_USERNAME="@sarkarisevaportaljkssb"
-          
-          # Latest post fetch karne ki script
-          LATEST_POST=$(curl -s "$FEED_URL" | grep -oPm1 "(?<=<title type='text'>)[^<]+" | head -n 1)
-          POST_LINK=$(curl -s "$FEED_URL" | grep -oPm1 "(?<=<link rel='alternate' type='text/html' href=')[^']+" | head -n 1)
-          
-          # Telegram par message bhejna
-          MESSAGE="📌 *Nayi Sarkari Update:* %0A%0A$LATEST_POST%0A%0A🔗 Check Here: $POST_LINK"
-          
+
+          # Python se sahi parsing
+          RESULT=$(python3 - <<'EOF'
+import urllib.request
+import xml.etree.ElementTree as ET
+
+url = "https://www.indiagovtjobs.in/feeds/posts/default"
+req = urllib.request.urlopen(url, timeout=10)
+tree = ET.parse(req)
+root = tree.getroot()
+ns = {'atom': 'http://www.w3.org/2005/Atom'}
+
+entry = root.find('atom:entry', ns)
+title = entry.find('atom:title', ns).text
+link = entry.find("atom:link[@rel='alternate']", ns).get('href')
+print(f"{title}||{link}")
+EOF
+)
+
+          TITLE=$(echo "$RESULT" | cut -d'||' -f1)
+          LINK=$(echo "$RESULT" | cut -d'||' -f2)
+
+          MESSAGE="📌 *Nayi Sarkari Update*%0A%0A${TITLE}%0A%0A🔗 ${LINK}"
+
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${CHANNEL_USERNAME}" \
             -d "text=${MESSAGE}" \
