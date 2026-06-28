@@ -1,0 +1,1 @@
+A one-stop directory for all Central Government Ministries and Jammu & Kashmir Government Departments. Easily navigate official portals, schemes, and services — all in one place. Designed for citizens seeking quick access to government resources across India and the Union Territory of J&K.
