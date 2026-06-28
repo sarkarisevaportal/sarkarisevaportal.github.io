@@ -7,37 +7,55 @@ on:
 jobs:
   check-rss:
     runs-on: ubuntu-latest
+    env:
+      BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      CHANNEL_USERNAME: "@sarkarisevaportaljkssb"
     steps:
-      - name: Fetch RSS and Post to Telegram
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Fetch and Notify
         run: |
-          FEED_URL="https://www.indiagovtjobs.in/feeds/posts/default"
-          BOT_TOKEN="${{ 7953477032:AAH1vJkMDNHYkzDS4WSya2MWBT25kGShS8k }}"
-          CHANNEL_USERNAME="@sarkarisevaportaljkssb"
-
-          # Python se sahi parsing
           RESULT=$(python3 - <<'EOF'
-import urllib.request
-import xml.etree.ElementTree as ET
+          import urllib.request
+          import xml.etree.ElementTree as ET
+          import os
 
-url = "https://www.indiagovtjobs.in/feeds/posts/default"
-req = urllib.request.urlopen(url, timeout=10)
-tree = ET.parse(req)
-root = tree.getroot()
-ns = {'atom': 'http://www.w3.org/2005/Atom'}
+          url = "https://www.indiagovtjobs.in/feeds/posts/default"
+          req = urllib.request.urlopen(url, timeout=10)
+          root = ET.parse(req).getroot()
+          ns = {'atom': 'http://www.w3.org/2005/Atom'}
 
-entry = root.find('atom:entry', ns)
-title = entry.find('atom:title', ns).text
-link = entry.find("atom:link[@rel='alternate']", ns).get('href')
-print(f"{title}||{link}")
-EOF
-)
+          entry = root.find('atom:entry', ns)
+          title = entry.find('atom:title', ns).text
+          link = entry.find("atom:link[@rel='alternate']", ns).get('href')
 
-          TITLE=$(echo "$RESULT" | cut -d'||' -f1)
-          LINK=$(echo "$RESULT" | cut -d'||' -f2)
+          # Check if already posted
+          if os.path.exists("last_link.txt"):
+              with open("last_link.txt", "r") as f:
+                  if f.read() == link:
+                      exit(0)
 
-          MESSAGE="📌 *Nayi Sarkari Update*%0A%0A${TITLE}%0A%0A🔗 ${LINK}"
+          with open("last_link.txt", "w") as f:
+              f.write(link)
+          print(f"{title}||{link}")
+          EOF
+          )
 
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${CHANNEL_USERNAME}" \
-            -d "text=${MESSAGE}" \
-            -d "parse_mode=Markdown"
+          if [ -n "$RESULT" ]; then
+            TITLE=$(echo "$RESULT" | cut -d'||' -f1)
+            LINK=$(echo "$RESULT" | cut -d'||' -f2)
+            MESSAGE="📌 *Nayi Sarkari Update*%0A%0A${TITLE}%0A%0A🔗 ${LINK}"
+            
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${CHANNEL_USERNAME}" \
+              -d "text=${MESSAGE}" \
+              -d "parse_mode=Markdown"
+            
+            # Git config to save the file change
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add last_link.txt
+            git commit -m "Update last posted link"
+            git push
+          fi
