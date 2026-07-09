@@ -71,10 +71,11 @@ jobs:
             LINK="${RESULT##*||}"
             MESSAGE="📌 *Nayi Sarkari Update*%0A%0A${TITLE}%0A%0A🔗 ${LINK}"
 
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
               -d "chat_id=${CHANNEL_USERNAME}" \
               -d "text=${MESSAGE}" \
-              -d "parse_mode=Markdown"
+              -d "parse_mode=Markdown")
+            echo "Telegram API response: $TG_RESPONSE"
 
             git config user.name "github-actions"
             git config user.email "github-actions@github.com"
