@@ -17,7 +17,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Fetch and Notify
+      - name: Resolve DNS via Google (workaround for runner DNS issues)
+        run: |
+          IP=$(curl -s "https://dns.google/resolve?name=www.indiagovtjobs.in&type=A" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['Answer'][0]['data'])" 2>/dev/null || true)
+          if [ -n "$IP" ]; then
+            echo "Resolved www.indiagovtjobs.in -> $IP"
+            echo "$IP www.indiagovtjobs.in" | sudo tee -a /etc/hosts
+          else
+            echo "Could not resolve via Google DoH, will rely on system DNS + retries"
+          fi
+
+      - name: Fetch Blogger RSS and Notify
         run: |
           RESULT=$(python3 - <<'EOF'
           import urllib.request
@@ -30,16 +41,16 @@ jobs:
 
           root = None
           last_error = None
-          for attempt in range(3):
+          for attempt in range(6):
               try:
                   req = urllib.request.Request(url, headers=headers)
-                  resp = urllib.request.urlopen(req, timeout=15)
+                  resp = urllib.request.urlopen(req, timeout=20)
                   root = ET.parse(resp).getroot()
                   break
               except Exception as e:
                   last_error = e
-                  if attempt < 2:
-                      time.sleep(5)
+                  if attempt < 5:
+                      time.sleep(10)
 
           if root is None:
               print(f"FAILED_FETCH: {last_error}")
@@ -63,7 +74,7 @@ jobs:
 
           if [[ "$RESULT" == FAILED_FETCH:* ]]; then
             echo "Fetch failed after retries: $RESULT"
-            exit 0
+            RESULT=""
           fi
 
           if [ -n "$RESULT" ]; then
@@ -75,13 +86,104 @@ jobs:
               -d "chat_id=${CHANNEL_USERNAME}" \
               -d "text=${MESSAGE}" \
               -d "parse_mode=Markdown")
-            echo "Telegram API response: $TG_RESPONSE"
-
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git add last_link.txt
-            git commit -m "Update last posted link"
-            git push
+            echo "Telegram API response (Blogger): $TG_RESPONSE"
           else
-            echo "No new post found. Skipping."
+            echo "No new Blogger post found. Skipping."
           fi
+
+      - name: Fetch UPSC/SSC/IBPS/NTA/SBI/RRB updates and Notify
+        run: |
+          RESULTS=$(python3 - <<'EOF'
+          import urllib.request
+          import re
+          import os
+          import time
+
+          jkinfo_boards = {
+              "UPSC": "https://www.jkinfo.in/page.php?b=UPSC",
+              "SSC": "https://www.jkinfo.in/page.php?b=SSCNWR",
+              "IBPS": "https://www.jkinfo.in/page.php?b=IBPS",
+              "NTA": "https://www.jkinfo.in/page.php?b=CBSENET",
+          }
+          generic_boards = {
+              "SBI": "https://www.sbi.co.in/careers/current-openings",
+              "RRB_Jammu": "https://www.rrbjammu.nic.in/",
+              "RRB_Central": "https://www.rrcb.gov.in/",
+          }
+
+          headers = {"User-Agent": "Mozilla/5.0 (compatible; SarkariSevaBot/1.0)"}
+          out_lines = []
+
+          def fetch(url):
+              for attempt in range(4):
+                  try:
+                      req = urllib.request.Request(url, headers=headers)
+                      resp = urllib.request.urlopen(req, timeout=20)
+                      return resp.read().decode("utf-8", errors="ignore")
+                  except Exception:
+                      if attempt < 3:
+                          time.sleep(8)
+              return None
+
+          def save_if_new(name, link, title, out_lines):
+              state_file = f"last_{name}.txt"
+              prev = None
+              if os.path.exists(state_file):
+                  with open(state_file) as f:
+                      prev = f.read().strip()
+              if prev != link:
+                  with open(state_file, "w") as f:
+                      f.write(link)
+                  out_lines.append(f"{name}||{title}||{link}")
+
+          for name, url in jkinfo_boards.items():
+              html = fetch(url)
+              if not html:
+                  continue
+              matches = re.findall(r'<a\s+href="([^"]+)"[^>]*>\s*<b>(.*?)</b>', html, re.S)
+              if not matches:
+                  continue
+              link, title = matches[0]
+              title = re.sub(r'<[^<]+?>', '', title).strip()
+              save_if_new(name, link, title, out_lines)
+
+          for name, url in generic_boards.items():
+              html = fetch(url)
+              if not html:
+                  continue
+              matches = re.findall(r'<a\s+href="([^"]+)"[^>]*>\s*([^<]{15,200})</a>', html, re.S)
+              if not matches:
+                  continue
+              link, title = matches[0]
+              title = re.sub(r'\s+', ' ', title).strip()
+              save_if_new(name, link, title, out_lines)
+
+          print("\n".join(out_lines))
+          EOF
+          )
+
+          if [ -n "$RESULTS" ]; then
+            while IFS= read -r LINE; do
+              [ -z "$LINE" ] && continue
+              NAME="${LINE%%||*}"
+              REST="${LINE#*||}"
+              TITLE="${REST%%||*}"
+              LINK="${REST##*||}"
+              MESSAGE="📌 *${NAME} Update*%0A%0A${TITLE}%0A%0A🔗 ${LINK}"
+
+              TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                -d "chat_id=${CHANNEL_USERNAME}" \
+                -d "text=${MESSAGE}" \
+                -d "parse_mode=Markdown")
+              echo "Telegram API response (${NAME}): $TG_RESPONSE"
+            done <<< "$RESULTS"
+          else
+            echo "No new UPSC/SSC/IBPS/NTA/SBI/RRB updates found."
+          fi
+
+      - name: Commit updated state files
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add last_link.txt last_UPSC.txt last_SSC.txt last_IBPS.txt last_NTA.txt last_SBI.txt last_RRB_Jammu.txt last_RRB_Central.txt 2>/dev/null || true
+          git diff --cached --quiet || (git commit -m "Update last posted links" && git push)
