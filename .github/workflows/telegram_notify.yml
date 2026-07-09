@@ -15,7 +15,7 @@ jobs:
       CHANNEL_USERNAME: "@sarkarisevaportaljkssb"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Fetch and Notify
         run: |
