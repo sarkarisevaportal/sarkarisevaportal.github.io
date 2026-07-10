@@ -96,6 +96,7 @@ jobs:
         run: |
           RESULTS=$(python3 - <<'EOF'
           import urllib.request
+          import urllib.parse
           import re
           import os
           import time
@@ -139,14 +140,40 @@ jobs:
                       f.write(link)
                   out_lines.append(f"{name}||{title}||{link}||{source_site}")
 
+          BAD_TITLES = {
+              "list of websites", "home", "contact us", "about us", "download app",
+              "android app", "privacy policy", "disclaimer", "sitemap", "feedback",
+              "login", "register", "contact", "about", "help", "faq", "terms",
+          }
+
+          def is_valid_match(link, title):
+              if not link or link.strip() in ("#", "", "javascript:void(0)"):
+                  return False
+              if not link.startswith("http") and not link.startswith("/"):
+                  return False
+              clean_title = re.sub(r'<[^<]+?>', '', title).strip().lower()
+              if len(clean_title) < 10:
+                  return False
+              if clean_title in BAD_TITLES:
+                  return False
+              return True
+
+          def first_valid_match(matches):
+              for link, title in matches:
+                  if is_valid_match(link, title):
+                      return link, title
+              return None
+
           for name, (url, source_site) in jkinfo_boards.items():
               html = fetch(url)
               if not html:
                   continue
               matches = re.findall(r'<a\s+href="([^"]+)"[^>]*>\s*<b>(.*?)</b>', html, re.S)
-              if not matches:
+              result = first_valid_match(matches)
+              if not result:
                   continue
-              link, title = matches[0]
+              link, title = result
+              link = urllib.parse.urljoin(url, link)
               title = re.sub(r'<[^<]+?>', '', title).strip()
               save_if_new(name, link, title, source_site, out_lines)
 
@@ -155,9 +182,11 @@ jobs:
               if not html:
                   continue
               matches = re.findall(r'<a\s+href="([^"]+)"[^>]*>\s*([^<]{15,200})</a>', html, re.S)
-              if not matches:
+              result = first_valid_match(matches)
+              if not result:
                   continue
-              link, title = matches[0]
+              link, title = result
+              link = urllib.parse.urljoin(url, link)
               title = re.sub(r'\s+', ' ', title).strip()
               save_if_new(name, link, title, source_site, out_lines)
 
