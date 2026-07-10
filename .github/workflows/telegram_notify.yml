@@ -13,6 +13,7 @@ jobs:
     env:
       BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
       CHANNEL_USERNAME: "@sarkarisevaportaljkssb"
+      OWN_SITE: "https://sarkarisevaportal.github.io/"
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -80,7 +81,7 @@ jobs:
           if [ -n "$RESULT" ]; then
             TITLE="${RESULT%%||*}"
             LINK="${RESULT##*||}"
-            MESSAGE="📌 *Nayi Sarkari Update*%0A%0A${TITLE}%0A%0A🔗 ${LINK}"
+            MESSAGE="📌 *Nayi Sarkari Update*%0A%0A${TITLE}%0A%0A📄 Notification: ${LINK}%0A🌐 Source: indiagovtjobs.in%0A📢 More updates: ${OWN_SITE}"
 
             TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
               -d "chat_id=${CHANNEL_USERNAME}" \
@@ -100,15 +101,17 @@ jobs:
           import time
 
           jkinfo_boards = {
-              "UPSC": "https://www.jkinfo.in/page.php?b=UPSC",
-              "SSC": "https://www.jkinfo.in/page.php?b=SSCNWR",
-              "IBPS": "https://www.jkinfo.in/page.php?b=IBPS",
-              "NTA": "https://www.jkinfo.in/page.php?b=CBSENET",
+              "UPSC": ("https://www.jkinfo.in/page.php?b=UPSC", "https://upsc.gov.in/"),
+              "SSC": ("https://www.jkinfo.in/page.php?b=SSCNWR", "https://ssc.nic.in/"),
+              "IBPS": ("https://www.jkinfo.in/page.php?b=IBPS", "https://www.ibps.in/"),
+              "NTA": ("https://www.jkinfo.in/page.php?b=CBSENET", "https://nta.ac.in/"),
+              "JKSSB": ("https://www.jkinfo.in/page.php?b=JKSSB", "https://jkssb.nic.in/"),
+              "JKHC": ("https://www.jkinfo.in/page.php?b=JKHC", "https://jkhighcourt.nic.in/"),
           }
           generic_boards = {
-              "SBI": "https://www.sbi.co.in/careers/current-openings",
-              "RRB_Jammu": "https://www.rrbjammu.nic.in/",
-              "RRB_Central": "https://www.rrcb.gov.in/",
+              "SBI": ("https://www.sbi.co.in/careers/current-openings", "https://www.sbi.co.in/careers"),
+              "RRB_Jammu": ("https://www.rrbjammu.nic.in/", "https://www.rrbjammu.nic.in/"),
+              "RRB_Central": ("https://www.rrcb.gov.in/", "https://www.rrcb.gov.in/"),
           }
 
           headers = {"User-Agent": "Mozilla/5.0 (compatible; SarkariSevaBot/1.0)"}
@@ -125,7 +128,7 @@ jobs:
                           time.sleep(8)
               return None
 
-          def save_if_new(name, link, title, out_lines):
+          def save_if_new(name, link, title, source_site, out_lines):
               state_file = f"last_{name}.txt"
               prev = None
               if os.path.exists(state_file):
@@ -134,9 +137,9 @@ jobs:
               if prev != link:
                   with open(state_file, "w") as f:
                       f.write(link)
-                  out_lines.append(f"{name}||{title}||{link}")
+                  out_lines.append(f"{name}||{title}||{link}||{source_site}")
 
-          for name, url in jkinfo_boards.items():
+          for name, (url, source_site) in jkinfo_boards.items():
               html = fetch(url)
               if not html:
                   continue
@@ -145,9 +148,9 @@ jobs:
                   continue
               link, title = matches[0]
               title = re.sub(r'<[^<]+?>', '', title).strip()
-              save_if_new(name, link, title, out_lines)
+              save_if_new(name, link, title, source_site, out_lines)
 
-          for name, url in generic_boards.items():
+          for name, (url, source_site) in generic_boards.items():
               html = fetch(url)
               if not html:
                   continue
@@ -156,7 +159,7 @@ jobs:
                   continue
               link, title = matches[0]
               title = re.sub(r'\s+', ' ', title).strip()
-              save_if_new(name, link, title, out_lines)
+              save_if_new(name, link, title, source_site, out_lines)
 
           print("\n".join(out_lines))
           EOF
@@ -166,10 +169,12 @@ jobs:
             while IFS= read -r LINE; do
               [ -z "$LINE" ] && continue
               NAME="${LINE%%||*}"
-              REST="${LINE#*||}"
-              TITLE="${REST%%||*}"
-              LINK="${REST##*||}"
-              MESSAGE="📌 *${NAME} Update*%0A%0A${TITLE}%0A%0A🔗 ${LINK}"
+              REST1="${LINE#*||}"
+              TITLE="${REST1%%||*}"
+              REST2="${REST1#*||}"
+              LINK="${REST2%%||*}"
+              SOURCE="${REST2##*||}"
+              MESSAGE="📌 *${NAME} Update*%0A%0A${TITLE}%0A%0A📄 Notification/PDF: ${LINK}%0A🌐 Source Site: ${SOURCE}%0A📢 More updates: ${OWN_SITE}"
 
               TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
                 -d "chat_id=${CHANNEL_USERNAME}" \
@@ -185,5 +190,5 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add last_link.txt last_UPSC.txt last_SSC.txt last_IBPS.txt last_NTA.txt last_SBI.txt last_RRB_Jammu.txt last_RRB_Central.txt 2>/dev/null || true
+          git add last_link.txt last_UPSC.txt last_SSC.txt last_IBPS.txt last_NTA.txt last_SBI.txt last_RRB_Jammu.txt last_RRB_Central.txt last_JKSSB.txt last_JKHC.txt 2>/dev/null || true
           git diff --cached --quiet || (git commit -m "Update last posted links" && git push)
