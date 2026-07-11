@@ -7,6 +7,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: sarkari-telegram-bot
+  cancel-in-progress: false
+
 jobs:
   check-rss:
     runs-on: ubuntu-latest
@@ -149,15 +153,20 @@ jobs:
               return True
 
           def best_match(html, pattern):
-              """Pick the first valid match; prefer one flagged as NEW nearby."""
+              """Pick the first valid match; prefer one flagged as NEW (in title or just before/after it)."""
               candidates = []
               for m in re.finditer(pattern, html, re.S):
                   link, title = m.group(1), m.group(2)
                   if is_valid(link, title):
+                      leading = html[max(0, m.start() - 60): m.start()]
                       trailing = html[m.end(): m.end() + 150]
-                      is_new = bool(re.search(r'\(?\bNEW\b\)?', trailing, re.I))
+                      is_new = bool(
+                          re.search(r'\(?\bNEW\b\)?', title, re.I) or
+                          re.search(r'\(?\bNEW\b\)?', leading, re.I) or
+                          re.search(r'\(?\bNEW\b\)?', trailing, re.I)
+                      )
                       candidates.append((is_new, link, title))
-                  if len(candidates) >= 15:
+                  if len(candidates) >= 20:
                       break
               if not candidates:
                   return None
@@ -267,4 +276,13 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add last_link.txt last_UPSC.txt last_SSC.txt last_IBPS.txt last_NTA.txt last_JKSSB.txt last_JKHC.txt last_SBI.txt last_RRB_Jammu.txt last_RRB_Central.txt last_EMRS.txt last_KVS.txt last_NVS.txt 2>/dev/null || true
-          git diff --cached --quiet || (git commit -m "Update last posted links" && git push)
+          if ! git diff --cached --quiet; then
+            git commit -m "Update last posted links"
+            for i in 1 2 3; do
+              git pull --rebase origin main && git push && break
+              echo "Push attempt $i failed, retrying..."
+              sleep 5
+            done
+          else
+            echo "No state changes to commit."
+          fi
