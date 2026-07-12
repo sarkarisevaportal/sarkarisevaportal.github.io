@@ -130,6 +130,8 @@ jobs:
               "login", "register", "contact", "about", "help", "faq", "terms",
               "notification", "notifications", "recruitment", "vacancies",
           }
+          HISTORY_LIMIT = 60
+          CANDIDATES_PER_BOARD = 6
 
           def fetch(url):
               for attempt in range(4):
@@ -152,42 +154,46 @@ jobs:
                   return False
               return True
 
-          def best_match(html, pattern):
-              """Pick the first valid match; prefer one flagged as NEW (in title or just before/after it)."""
-              candidates = []
+          def top_candidates(html, pattern, base_url, limit):
+              seen_links = set()
+              out = []
               for m in re.finditer(pattern, html, re.S):
                   link, title = m.group(1), m.group(2)
-                  if is_valid(link, title):
-                      leading = html[max(0, m.start() - 60): m.start()]
-                      trailing = html[m.end(): m.end() + 150]
-                      is_new = bool(
-                          re.search(r'\(?\bNEW\b\)?', title, re.I) or
-                          re.search(r'\(?\bNEW\b\)?', leading, re.I) or
-                          re.search(r'\(?\bNEW\b\)?', trailing, re.I)
-                      )
-                      candidates.append((is_new, link, title))
-                  if len(candidates) >= 20:
+                  if not is_valid(link, title):
+                      continue
+                  full_link = urllib.parse.urljoin(base_url, link)
+                  if full_link in seen_links:
+                      continue
+                  seen_links.add(full_link)
+                  clean_title = re.sub(r'\s+', ' ', re.sub(r'<[^<]+?>', '', title)).strip()
+                  out.append((full_link, clean_title))
+                  if len(out) >= limit:
                       break
-              if not candidates:
-                  return None
-              for is_new, link, title in candidates:
-                  if is_new:
-                      return link, title
-              return candidates[0][1], candidates[0][2]
+              return out
 
-          def save_if_new_and_notify(name, link, title, base_url):
-              state_file = f"last_{name}.txt"
-              prev = None
-              if os.path.exists(state_file):
-                  with open(state_file) as f:
-                      prev = f.read().strip()
-              if prev == link:
-                  return None
-              with open(state_file, "w") as f:
-                  f.write(link)
+          def load_history(name):
+              path = f"history_{name}.json"
+              if os.path.exists(path):
+                  try:
+                      with open(path) as f:
+                          return json.load(f)
+                  except Exception:
+                      return []
+              # Fall back to old single-link state file if it exists (migration)
+              old_path = f"last_{name}.txt"
+              if os.path.exists(old_path):
+                  with open(old_path) as f:
+                      old_link = f.read().strip()
+                  if old_link:
+                      return [old_link]
+              return []
 
-              clean_title = re.sub(r'\s+', ' ', re.sub(r'<[^<]+?>', '', title)).strip()
-              pdf_path = None
+          def save_history(name, history):
+              path = f"history_{name}.json"
+              with open(path, "w") as f:
+                  json.dump(history[:HISTORY_LIMIT], f)
+
+          def try_download_pdf(name, link):
               try:
                   req = urllib.request.Request(link, headers=headers)
                   resp = urllib.request.urlopen(req, timeout=25)
@@ -197,10 +203,37 @@ jobs:
                       pdf_path = f"pdf_{name}.pdf"
                       with open(pdf_path, "wb") as pf:
                           pf.write(data)
+                      return pdf_path
               except Exception:
-                  pdf_path = None
+                  pass
+              return None
 
-              return {"name": name, "title": clean_title, "link": link, "pdf": pdf_path}
+          def process_board(name, url, candidates):
+              history = load_history(name)
+              history_set = set(history)
+              new_items = []
+              for link, title in candidates:
+                  if link not in history_set:
+                      new_items.append((link, title))
+
+              if not new_items:
+                  return []
+
+              results = []
+              for link, title in new_items:
+                  pdf_path = try_download_pdf(name, link)
+                  results.append({"name": name, "title": title, "link": link, "pdf": pdf_path})
+
+              # Update history: newest first, keep unique, cap at limit
+              updated = [l for l, t in new_items] + history
+              seen = set()
+              deduped = []
+              for l in updated:
+                  if l not in seen:
+                      seen.add(l)
+                      deduped.append(l)
+              save_history(name, deduped)
+              return results
 
           results = []
 
@@ -208,27 +241,15 @@ jobs:
               html = fetch(url)
               if not html:
                   continue
-              match = best_match(html, r'<a\s+href="([^"]+)"[^>]*>\s*<b>(.*?)</b>')
-              if not match:
-                  continue
-              link, title = match
-              link = urllib.parse.urljoin(url, link)
-              r = save_if_new_and_notify(name, link, title, url)
-              if r:
-                  results.append(r)
+              candidates = top_candidates(html, r'<a\s+href="([^"]+)"[^>]*>\s*<b>(.*?)</b>', url, CANDIDATES_PER_BOARD)
+              results.extend(process_board(name, url, candidates))
 
           for name, url in generic_boards.items():
               html = fetch(url)
               if not html:
                   continue
-              match = best_match(html, r'<a\s+href="([^"]+)"[^>]*>\s*([^<]{15,200})</a>')
-              if not match:
-                  continue
-              link, title = match
-              link = urllib.parse.urljoin(url, link)
-              r = save_if_new_and_notify(name, link, title, url)
-              if r:
-                  results.append(r)
+              candidates = top_candidates(html, r'<a\s+href="([^"]+)"[^>]*>\s*([^<]{15,200})</a>', url, CANDIDATES_PER_BOARD)
+              results.extend(process_board(name, url, candidates))
 
           with open("notify_results.json", "w") as f:
               json.dump(results, f)
@@ -275,7 +296,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add last_link.txt last_UPSC.txt last_SSC.txt last_IBPS.txt last_NTA.txt last_JKSSB.txt last_JKHC.txt last_SBI.txt last_RRB_Jammu.txt last_RRB_Central.txt last_EMRS.txt last_KVS.txt last_NVS.txt 2>/dev/null || true
+          git add last_link.txt history_UPSC.json history_SSC.json history_IBPS.json history_NTA.json history_JKSSB.json history_JKHC.json history_SBI.json history_RRB_Jammu.json history_RRB_Central.json history_EMRS.json history_KVS.json history_NVS.json 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git commit -m "Update last posted links"
             for i in 1 2 3; do
