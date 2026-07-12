@@ -272,27 +272,29 @@ jobs:
               [ -z "$NAME" ] && continue
               CAPTION=$(printf '🚨 *Nayi Update Aayi Hai!*\n\n*%s*\n%s\n\n📢 Aur updates: %s' "$NAME" "$TITLE" "$OWN_SITE")
 
-              if [ -n "$PDF" ] && [ -f "$PDF" ]; then
+              if [ -n "$PDF" ] && [ -s "$PDF" ]; then
                 TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
                   -F "chat_id=${CHANNEL_USERNAME}" \
                   -F "caption=${CAPTION}" \
                   -F "parse_mode=Markdown" \
-                  -F "document=@${PDF}")
+                  -F "document=@${PDF}" || echo '{"ok":false,"description":"curl failed"}')
                 echo "Telegram API response (${NAME}, PDF): $TG_RESPONSE"
               else
                 MESSAGE="🚨 *Nayi Update Aayi Hai!*%0A%0A*${NAME}*%0A${TITLE}%0A%0A🔗 ${LINK}%0A%0A📢 Aur updates: ${OWN_SITE}"
                 TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
                   -d "chat_id=${CHANNEL_USERNAME}" \
                   -d "text=${MESSAGE}" \
-                  -d "parse_mode=Markdown")
+                  -d "parse_mode=Markdown" || echo '{"ok":false,"description":"curl failed"}')
                 echo "Telegram API response (${NAME}, link): $TG_RESPONSE"
               fi
-            done < notify_lines.txt
+              sleep 1
+            done < notify_lines.txt || true
           else
             echo "No new board updates found."
           fi
 
       - name: Commit updated state files
+        if: always()
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
