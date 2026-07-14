@@ -85,7 +85,7 @@ jobs:
           if [ -n "$RESULT" ]; then
             TITLE="${RESULT%%||*}"
             LINK="${RESULT##*||}"
-            MESSAGE="🚨 *Nayi Sarkari Update Aayi Hai!*%0A%0A${TITLE}%0A%0A🔗 ${LINK}%0A%0A📢 Aur updates: ${OWN_SITE}"
+            MESSAGE="🆕 *New Update!*%0A%0A📰 ${TITLE}%0A%0A📢 ${OWN_SITE}"
 
             TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
               -d "chat_id=${CHANNEL_USERNAME}" \
@@ -113,6 +113,16 @@ jobs:
               "NTA": "https://www.jkinfo.in/page.php?b=CBSENET",
               "JKSSB": "https://www.jkinfo.in/page.php?b=JKSSB",
               "JKHC": "https://www.jkinfo.in/page.php?b=JKHC",
+              "JKPSC": "https://www.jkinfo.in/page.php?b=JKPSC",
+              "JammuUniv": "https://www.jkinfo.in/page.php?b=JU",
+              "KashmirUniv": "https://www.jkinfo.in/page.php?b=KU",
+              "CentralUnivJammu": "https://www.jkinfo.in/page.php?b=CUJammu",
+              "CentralUnivKashmir": "https://www.jkinfo.in/page.php?b=CUKashmir",
+              "BGSBU": "https://www.jkinfo.in/page.php?b=BGSBU",
+              "SMVDU": "https://www.jkinfo.in/page.php?b=SMVDU",
+              "IUST": "https://www.jkinfo.in/page.php?b=IUST",
+              "SKUAST_Jammu": "https://www.jkinfo.in/page.php?b=SKUASTJammu",
+              "SKUAST_Kashmir": "https://www.jkinfo.in/page.php?b=SKUASTKashmir",
           }
           generic_boards = {
               "SBI": "https://www.sbi.co.in/careers/current-openings",
@@ -268,9 +278,27 @@ jobs:
               print(f'{i}|{r[\"name\"]}|{r[\"title\"]}|{r[\"link\"]}|{r[\"pdf\"] or \"\"}')
           " > notify_lines.txt
 
+            get_emoji() {
+              case "$1" in
+                UPSC) echo "🏛️" ;;
+                SSC) echo "📝" ;;
+                IBPS) echo "🏦" ;;
+                NTA) echo "🎓" ;;
+                JKSSB) echo "📌" ;;
+                JKHC) echo "⚖️" ;;
+                JKPSC) echo "🏢" ;;
+                JammuUniv|KashmirUniv|CentralUnivJammu|CentralUnivKashmir|BGSBU|SMVDU|IUST|SKUAST_Jammu|SKUAST_Kashmir) echo "🎓" ;;
+                SBI) echo "🏦" ;;
+                RRB_Jammu|RRB_Central) echo "🚆" ;;
+                EMRS|KVS|NVS) echo "🏫" ;;
+                *) echo "📋" ;;
+              esac
+            }
+
             while IFS='|' read -r IDX NAME TITLE LINK PDF; do
               [ -z "$NAME" ] && continue
-              CAPTION=$(printf '🚨 *Nayi Update Aayi Hai!*\n\n*%s*\n%s\n\n📢 Aur updates: %s' "$NAME" "$TITLE" "$OWN_SITE")
+              EMOJI=$(get_emoji "$NAME")
+              CAPTION=$(printf '🆕 *New Update!*\n\n%s Website: *%s*\n📝 Update: %s\n\n📢 %s' "$EMOJI" "$NAME" "$TITLE" "$OWN_SITE")
 
               if [ -n "$PDF" ] && [ -s "$PDF" ]; then
                 TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
@@ -280,7 +308,7 @@ jobs:
                   -F "document=@${PDF}" || echo '{"ok":false,"description":"curl failed"}')
                 echo "Telegram API response (${NAME}, PDF): $TG_RESPONSE"
               else
-                MESSAGE="🚨 *Nayi Update Aayi Hai!*%0A%0A*${NAME}*%0A${TITLE}%0A%0A🔗 ${LINK}%0A%0A📢 Aur updates: ${OWN_SITE}"
+                MESSAGE="🆕 *New Update!*%0A%0A${EMOJI} Website: *${NAME}*%0A📝 Update: ${TITLE}%0A%0A📢 ${OWN_SITE}"
                 TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
                   -d "chat_id=${CHANNEL_USERNAME}" \
                   -d "text=${MESSAGE}" \
@@ -298,7 +326,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add last_link.txt history_UPSC.json history_SSC.json history_IBPS.json history_NTA.json history_JKSSB.json history_JKHC.json history_SBI.json history_RRB_Jammu.json history_RRB_Central.json history_EMRS.json history_KVS.json history_NVS.json 2>/dev/null || true
+          git add last_link.txt history_UPSC.json history_SSC.json history_IBPS.json history_NTA.json history_JKSSB.json history_JKHC.json history_JKPSC.json history_JammuUniv.json history_KashmirUniv.json history_CentralUnivJammu.json history_CentralUnivKashmir.json history_BGSBU.json history_SMVDU.json history_IUST.json history_SKUAST_Jammu.json history_SKUAST_Kashmir.json history_SBI.json history_RRB_Jammu.json history_RRB_Central.json history_EMRS.json history_KVS.json history_NVS.json 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git commit -m "Update last posted links"
             for i in 1 2 3; do
