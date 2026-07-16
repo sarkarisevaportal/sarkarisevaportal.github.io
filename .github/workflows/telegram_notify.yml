@@ -239,15 +239,23 @@ jobs:
           for key, (code, emoji, label) in JKINFO_BOARDS.items():
               html = fetch(f"https://jkinfo.in/page.php?b={code}")
               if not html:
+                  print(f"[DEBUG] {key}: FETCH FAILED")
                   continue
               candidates = jkinfo_candidates(html, "https://jkinfo.in/")
+              hist = load_history(key)
+              new_count = len([c for c in candidates if c[0] not in set(hist)])
+              print(f"[DEBUG] {key}: html_len={len(html)} candidates={len(candidates)} history_size={len(hist)} genuinely_new={new_count}")
               all_results.extend(process(key, candidates, emoji, label))
 
           for key, (url, emoji, label) in DIRECT_BOARDS.items():
               html = fetch(url)
               if not html:
+                  print(f"[DEBUG] {key}: FETCH FAILED")
                   continue
               candidates = direct_candidates(html, url)
+              hist = load_history(key)
+              new_count = len([c for c in candidates if c[0] not in set(hist)])
+              print(f"[DEBUG] {key}: html_len={len(html)} candidates={len(candidates)} history_size={len(hist)} genuinely_new={new_count}")
               all_results.extend(process(key, candidates, emoji, label))
 
           json.dump(all_results, open("notify_results.json", "w"))
