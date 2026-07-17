@@ -4,13 +4,6 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:
 
-concurrency:
-  group: sarkari-telegram-bot
-  cancel-in-progress: false
-
-permissions:
-  contents: write
-
 jobs:
   check-rss:
     runs-on: ubuntu-latest
@@ -19,306 +12,78 @@ jobs:
       CHANNEL_USERNAME: "@sarkarisevaportaljkssb"
       OWN_SITE: "https://sarkarisevaportal.github.io/"
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: One-time reset of old/stale state files
+      - uses: actions/checkout@v5
+      - name: Fetch and Notify
         run: |
-          if [ ! -f ".state_version" ] || [ "$(cat .state_version)" != "v10" ]; then
-            echo "Resetting old state files (first run on v10 logic)..."
-            rm -f last_*.txt history_*.json
-            echo "v10" > .state_version
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git add -A
-            git diff --cached --quiet || (git commit -m "Reset stale state files for v10 logic" && git pull --rebase origin main && git push)
-          else
-            echo "State already on v10, no reset needed."
-          fi
-
-      - name: Resolve DNS via Google (workaround for runner DNS issues)
-        run: |
-          IP=$(curl -s "https://dns.google/resolve?name=www.indiagovtjobs.in&type=A" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['Answer'][0]['data'])" 2>/dev/null || true)
-          if [ -n "$IP" ]; then
-            echo "$IP www.indiagovtjobs.in" | sudo tee -a /etc/hosts
-          fi
-
-      - name: Fetch Blogger RSS and Notify
-        run: |
-          RESULT=$(python3 - <<'EOF'
-          import urllib.request
-          import xml.etree.ElementTree as ET
-          import os
-          import time
-
-          url = "https://www.indiagovtjobs.in/feeds/posts/default"
-          headers = {"User-Agent": "Mozilla/5.0 (compatible; SarkariSevaBot/1.0)"}
-          root = None
-          for attempt in range(6):
-              try:
-                  req = urllib.request.Request(url, headers=headers)
-                  resp = urllib.request.urlopen(req, timeout=20)
-                  root = ET.parse(resp).getroot()
-                  break
-              except Exception:
-                  if attempt < 5:
-                      time.sleep(10)
-          if root is None:
-              exit(0)
-          ns = {'atom': 'http://www.w3.org/2005/Atom'}
-          entry = root.find('atom:entry', ns)
-          title = entry.find('atom:title', ns).text
-          link = entry.find("atom:link[@rel='alternate']", ns).get('href')
-          history = []
-          if os.path.exists("history_BLOGGER.json"):
-              import json
-              try:
-                  history = json.load(open("history_BLOGGER.json"))
-              except Exception:
-                  history = []
-          if link in history:
-              exit(0)
-          import json
-          history = [link] + history
-          json.dump(history[:60], open("history_BLOGGER.json", "w"))
-          print(f"{title}||{link}")
-          EOF
-          )
-          if [ -n "$RESULT" ]; then
-            TITLE="${RESULT%%||*}"
-            LINK="${RESULT##*||}"
-            MESSAGE="🆕 *New Update!*%0A%0A📰 Website: *Sarkari Jobs*%0A📝 Update: ${TITLE}%0A%0A📢 ${OWN_SITE}"
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-              -d "chat_id=${CHANNEL_USERNAME}" -d "text=${MESSAGE}" -d "parse_mode=Markdown" > /dev/null
-            echo "Sent Blogger update: $TITLE"
-          else
-            echo "No new Blogger post."
-          fi
-
-      - name: Fetch all boards with signature validation
-        run: |
+          pip install beautifulsoup4
           python3 - <<'PYEOF'
-          import urllib.request
-          import urllib.parse
-          import re
-          import os
-          import json
-          import time
+          import urllib.request, json, os, urllib.parse, time
+          from bs4 import BeautifulSoup
 
-          # boards hosted on jkinfo.in aggregator - verified board codes
-          JKINFO_BOARDS = {
-              "UPSC":            ("UPSC",       "🏛️", "UPSC"),
-              "SSC":             ("SSCNWR",     "📝", "SSC (North Western Region)"),
-              "IBPS":            ("IBPS",       "🏦", "IBPS"),
-              "NTA":             ("CBSENET",    "🎓", "NTA"),
-              "JKSSB":           ("JKSSB",      "📌", "JKSSB"),
-              "JKPSC":           ("JKPSC",      "🏢", "JKPSC"),
-              "JKHC":            ("JKHC",       "⚖️", "J&K High Court"),
-              "JammuUniv":       ("JU",         "🎓", "University of Jammu"),
-              "KashmirUniv":     ("KU",         "🎓", "University of Kashmir"),
-              "CentralUnivJammu":   ("CUJammu", "🎓", "Central University Jammu"),
-              "CentralUnivKashmir":("CUK",      "🎓", "Central University Kashmir"),
-              "BGSBU":           ("BGSBU",      "🎓", "BGSB University"),
-              "SMVDU":           ("SMVDU",      "🎓", "SMVD University"),
-              "IUST":            ("IUST",       "🎓", "IUST"),
-              "SKUAST_Jammu":    ("SKUASTJ",    "🎓", "SKUAST Jammu"),
-              "SKUAST_Kashmir":  ("SKUASTK",    "🎓", "SKUAST Kashmir"),
-              "KVS":             ("KVS",        "🏫", "KVS"),
+          BOARDS = {
+              "JKSSB": "https://jkssb.nic.in/Pages/WhatsNew.aspx",
+              "JKPSC": "https://jkpsc.nic.in/LatestNews.html",
+              "JKHC": "https://jkhighcourt.nic.in/recruitment.php",
+              "SBI": "https://www.sbi.co.in/careers/current-openings",
+              "UPSC": "https://upsc.gov.in/whats-new",
+              "SSC": "https://ssc.gov.in/candidate-corner/tentative-answer-keys",
+              "JammuUniv": "https://jammuuniversity.ac.in/notifications",
+              "KashmirUniv": "https://kashmiruniversity.net/notifications.aspx",
+              "CUJammu": "https://www.cujammu.ac.in/Notifications.aspx",
+              "CUKashmir": "https://www.cukashmir.ac.in/",
+              "BGSBU": "https://www.bgsbu.ac.in/recruitment.php",
+              "SMVDU": "https://www.smvdu.ac.in/",
+              "IUST": "https://www.iust.ac.in/",
+              "SKUAST_J": "https://skuast.org/",
+              "SKUAST_K": "https://www.skuastkashmir.ac.in/",
+              "KVS": "https://kvsangathan.nic.in/recruitment",
+              "NVS": "https://navodaya.gov.in/nvs/en/Recruitment/Notification-Vacancies/",
+              "EMRS": "https://nests.tribal.gov.in/show_content.php?lang=1&level=1&ls_id=364&lid=148"
           }
+          
+          HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
 
-          # sites not covered by jkinfo.in - fetched directly, filtered by document-link requirement
-          DIRECT_BOARDS = {
-              "SBI":          ("https://www.sbi.co.in/careers/current-openings", "🏦", "SBI"),
-              "RRB_Jammu":    ("https://www.rrbjammu.nic.in/",                   "🚆", "RRB Jammu"),
-              "RRB_Central":  ("https://www.rrcb.gov.in/",                       "🚆", "RRB Central"),
-              "EMRS":         ("https://nests.tribal.gov.in/show_content.php?lang=1&level=1&ls_id=364&lid=148", "🏫", "EMRS"),
-              "NVS":          ("https://navodaya.gov.in/nvs/en/Recruitment/Notification-Vacancies/", "🏫", "NVS"),
-          }
-
-          HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; SarkariSevaBot/1.0)"}
-          HISTORY_LIMIT = 60
-          MAX_CANDIDATES = 8
-          TIME_AGO_RE = re.compile(r'\(\s*\d+\s+(?:hour|day|week|month|year)s?\s+ago\s*\)', re.I)
-          DOC_EXT_RE = re.compile(r'\.(pdf|docx?|xlsx?)(\?|$)', re.I)
-          BAD_TITLES = {
-              "list of websites", "home", "contact us", "about us", "download app",
-              "android app", "privacy policy", "disclaimer", "sitemap", "feedback",
-              "login", "register", "contact", "about", "help", "faq", "terms",
-              "notification", "notifications", "recruitment", "vacancies", "view",
-          }
-
-          def fetch(url):
-              for attempt in range(4):
-                  try:
-                      req = urllib.request.Request(url, headers=HEADERS)
-                      resp = urllib.request.urlopen(req, timeout=20)
-                      return resp.read().decode("utf-8", errors="ignore")
-                  except Exception:
-                      if attempt < 3:
-                          time.sleep(6)
-              return None
-
-          def clean_title(raw):
-              return re.sub(r'\s+', ' ', re.sub(r'<[^<]+?>', '', raw)).strip()
-
-          def basic_valid(link, title):
-              if not link or link.strip() in ("#", "", "javascript:void(0)"):
-                  return False
-              if not link.startswith("http") and not link.startswith("/"):
-                  return False
-              t = clean_title(title).lower()
-              if len(t) < 10 or t in BAD_TITLES:
-                  return False
-              return True
-
-          def jkinfo_candidates(html, base_url):
-              """Only accept items followed shortly by a '(X ago)' signature - real notices only."""
-              out = []
-              for m in re.finditer(r'<a\s+href="([^"]+)"[^>]*>\s*<b>(.*?)</b>', html, re.S):
-                  link, title = m.group(1), m.group(2)
-                  if not basic_valid(link, title):
-                      continue
-                  trailing = html[m.end(): m.end() + 200]
-                  if not TIME_AGO_RE.search(trailing):
-                      continue
-                  full_link = urllib.parse.urljoin(base_url, link)
-                  out.append((full_link, clean_title(title)))
-                  if len(out) >= MAX_CANDIDATES:
-                      break
-              return out
-
-          def direct_candidates(html, base_url):
-              """No 'time ago' signature available - require a real document link instead."""
-              out = []
-              for m in re.finditer(r'<a\s+href="([^"]+)"[^>]*>\s*([^<]{15,200})</a>', html, re.S):
-                  link, title = m.group(1), m.group(2)
-                  if not basic_valid(link, title):
-                      continue
-                  full_link = urllib.parse.urljoin(base_url, link)
-                  if not DOC_EXT_RE.search(full_link):
-                      continue
-                  out.append((full_link, clean_title(title)))
-                  if len(out) >= MAX_CANDIDATES:
-                      break
-              return out
-
-          def load_history(name):
-              path = f"history_{name}.json"
-              if os.path.exists(path):
-                  try:
-                      return json.load(open(path))
-                  except Exception:
-                      return []
-              return []
-
-          def save_history(name, links):
-              seen = set()
-              deduped = []
-              for l in links:
-                  if l not in seen:
-                      seen.add(l)
-                      deduped.append(l)
-              json.dump(deduped[:HISTORY_LIMIT], open(f"history_{name}.json", "w"))
-
-          def try_pdf(name, link):
+          all_new_updates = []
+          for name, url in BOARDS.items():
               try:
-                  req = urllib.request.Request(link, headers=HEADERS)
-                  resp = urllib.request.urlopen(req, timeout=25)
-                  ctype = resp.headers.get("Content-Type", "")
-                  if "pdf" in ctype.lower() or link.lower().endswith(".pdf"):
-                      data = resp.read()
-                      path = f"pdf_{name}.pdf"
-                      open(path, "wb").write(data)
-                      return path
-              except Exception:
-                  pass
-              return None
+                  req = urllib.request.Request(url, headers=HEADERS)
+                  html = urllib.request.urlopen(req, timeout=15).read()
+                  soup = BeautifulSoup(html, 'html.parser')
+                  
+                  hist_file = f"history_{name}.json"
+                  history = json.load(open(hist_file)) if os.path.exists(hist_file) else []
+                  
+                  count = 0
+                  for a in soup.find_all('a', href=True):
+                      title = a.get_text(strip=True)
+                      if len(title) > 20 and count < 3:
+                          link = urllib.parse.urljoin(url, a['href'])
+                          if link not in history:
+                              all_new_updates.append({"name": name, "title": title, "link": link})
+                              history.insert(0, link)
+                              count += 1
+                  json.dump(history[:30], open(hist_file, "w"))
+              except: continue
 
-          def process(name, candidates, emoji, label):
-              history = load_history(name)
-              hist_set = set(history)
-              new_items = [(l, t) for l, t in candidates if l not in hist_set]
-              if not new_items:
-                  return []
-              results = []
-              for link, title in new_items:
-                  pdf_path = try_pdf(name, link)
-                  results.append({"name": name, "emoji": emoji, "label": label, "title": title, "link": link, "pdf": pdf_path})
-              save_history(name, [l for l, t in new_items] + history)
-              return results
-
-          all_results = []
-
-          for key, (code, emoji, label) in JKINFO_BOARDS.items():
-              html = fetch(f"https://jkinfo.in/page.php?b={code}")
-              if not html:
-                  print(f"[DEBUG] {key}: FETCH FAILED")
-                  continue
-              candidates = jkinfo_candidates(html, "https://jkinfo.in/")
-              hist = load_history(key)
-              new_count = len([c for c in candidates if c[0] not in set(hist)])
-              print(f"[DEBUG] {key}: html_len={len(html)} candidates={len(candidates)} history_size={len(hist)} genuinely_new={new_count}")
-              all_results.extend(process(key, candidates, emoji, label))
-
-          for key, (url, emoji, label) in DIRECT_BOARDS.items():
-              html = fetch(url)
-              if not html:
-                  print(f"[DEBUG] {key}: FETCH FAILED")
-                  continue
-              candidates = direct_candidates(html, url)
-              hist = load_history(key)
-              new_count = len([c for c in candidates if c[0] not in set(hist)])
-              print(f"[DEBUG] {key}: html_len={len(html)} candidates={len(candidates)} history_size={len(hist)} genuinely_new={new_count}")
-              all_results.extend(process(key, candidates, emoji, label))
-
-          json.dump(all_results, open("notify_results.json", "w"))
-          print(f"Found {len(all_results)} new updates across all boards")
+          json.dump(all_new_updates, open("updates.json", "w"))
           PYEOF
 
-          if [ -f notify_results.json ]; then
+          if [ -f updates.json ]; then
             python3 -c "
-          import json
-          data = json.load(open('notify_results.json'))
+          import json, os, urllib.parse, time
+          data = json.load(open('updates.json'))
           for r in data:
-              pdf = r['pdf'] or ''
-              print(f\"{r['name']}|{r['emoji']}|{r['label']}|{r['title']}|{r['link']}|{pdf}\")
-          " > notify_lines.txt
-
-            while IFS='|' read -r NAME EMOJI LABEL TITLE LINK PDF; do
-              [ -z "$NAME" ] && continue
-              CAPTION=$(printf '🆕 *New Update!*\n\n%s Website: *%s*\n📝 Update: %s\n\n📢 %s' "$EMOJI" "$LABEL" "$TITLE" "$OWN_SITE")
-
-              if [ -n "$PDF" ] && [ -s "$PDF" ]; then
-                TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
-                  -F "chat_id=${CHANNEL_USERNAME}" \
-                  -F "caption=${CAPTION}" \
-                  -F "parse_mode=Markdown" \
-                  -F "document=@${PDF}" || echo '{"ok":false}')
-              else
-                MESSAGE="🆕 *New Update!*%0A%0A${EMOJI} Website: *${LABEL}*%0A📝 Update: ${TITLE}%0A%0A📢 ${OWN_SITE}"
-                TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-                  -d "chat_id=${CHANNEL_USERNAME}" -d "text=${MESSAGE}" -d "parse_mode=Markdown" || echo '{"ok":false}')
-              fi
-              echo "Sent (${NAME}): $TG_RESPONSE"
-              sleep 1
-            done < notify_lines.txt || true
-          else
-            echo "No new board updates found."
+              msg = f'🆕 *New Update!*\n\n🏢 Dept: *{r['name']}*\n📝 {r['title']}\n\n🔗 {r['link']}\n\n📢 ${{OWN_SITE}}'
+              msg_enc = urllib.parse.quote(msg)
+              os.system(f'curl -s -X POST https://api.telegram.org/bot${{BOT_TOKEN}}/sendMessage -d chat_id=${{CHANNEL_USERNAME}} -d text=\"{msg_enc}\" -d parse_mode=Markdown > /dev/null')
+              time.sleep(3)
+          "
           fi
-
-      - name: Commit updated history files
+      - name: Commit
         if: always()
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add history_*.json 2>/dev/null || true
-          if ! git diff --cached --quiet; then
-            git commit -m "Update notification history"
-            for i in 1 2 3; do
-              git pull --rebase origin main && git push && break
-              sleep 5
-            done
-          else
-            echo "No history changes to commit."
-          fi
+          git commit -m "Auto-update all boards" || true
+          git push || true
