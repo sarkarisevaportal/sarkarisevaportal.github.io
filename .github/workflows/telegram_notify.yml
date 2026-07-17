@@ -22,6 +22,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: One-time reset of old/stale state files
+        run: |
+          if [ ! -f ".state_version" ] || [ "$(cat .state_version)" != "v10" ]; then
+            echo "Resetting old state files (first run on v10 logic)..."
+            rm -f last_*.txt history_*.json
+            echo "v10" > .state_version
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add -A
+            git diff --cached --quiet || (git commit -m "Reset stale state files for v10 logic" && git pull --rebase origin main && git push)
+          else
+            echo "State already on v10, no reset needed."
+          fi
+
       - name: Resolve DNS via Google (workaround for runner DNS issues)
         run: |
           IP=$(curl -s "https://dns.google/resolve?name=www.indiagovtjobs.in&type=A" \
