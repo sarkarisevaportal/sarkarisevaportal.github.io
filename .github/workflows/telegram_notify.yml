@@ -1,5 +1,4 @@
 name: Send Sarkari Updates to Telegram
-
 on:
   schedule:
     - cron: '0 * * * *'
@@ -12,35 +11,37 @@ jobs:
       - uses: actions/checkout@v5
       - name: Fetch and Notify
         run: |
-          echo "8.8.8.8 google-dns" | sudo tee -a /etc/hosts
           python3 -c "
           import urllib.request, urllib.parse, re, time
           
+          # Proxy URL add kiya hai taaki network error na aaye
+          def fetch_url(target_url):
+              proxy_url = 'https://api.allorigins.win/get?url=' + urllib.parse.quote(target_url)
+              req = urllib.request.Request(proxy_url, headers={'User-Agent': 'Mozilla/5.0'})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  import json
+                  data = json.loads(response.read().decode('utf-8'))
+                  return data.get('contents', '')
+
           BOARDS = {
               'JKSSB': 'https://jkssb.nic.in/Pages/Applicant/Jobs.aspx',
-              'JKPSC': 'https://jkpsc.nic.in/content/latest-news',
-              'JKHC': 'https://jkhighcourt.nic.in/recruitment.php',
-              'SBI': 'https://sbi.co.in/web/careers/current-openings',
-              'UPSC': 'https://upsc.gov.in/latest-news',
-              'SSC': 'https://ssc.gov.in/candidate-corner/tentative-answer-keys'
+              'SBI': 'https://sbi.co.in/web/careers/current-openings'
           }
           
-          HEADERS = {'User-Agent': 'Mozilla/5.0'}
           BOT_TOKEN = '${{ secrets.TELEGRAM_TOKEN }}'
-          CHANNEL = '@sarkarisevaportaljkssb'
+          CHANNEL = '${{ secrets.CHANNEL_USERNAME }}'
 
           for name, url in BOARDS.items():
               try:
-                  req = urllib.request.Request(url, headers=HEADERS)
-                  with urllib.request.urlopen(req, timeout=15) as response:
-                      html = response.read().decode('utf-8', errors='ignore')
+                  html = fetch_url(url)
                   links = re.findall(r'<a\s+href=[\'\"]([^\'\"]+)[\'\"][^>]*>(.*?)</a>', html, re.I | re.S)
+                  
                   count = 0
                   for link, title in links:
                       clean_title = re.sub(r'<[^>]+>', '', title).strip()
                       if len(clean_title) > 20 and count < 1:
                           full_link = urllib.parse.urljoin(url, link)
-                          msg = f'🆕 *New Update*\n\n🏢 Dept: {name}\n📝 {clean_title}\n\n🔗 {full_link}'
+                          msg = f'🆕 *Update:* {name}\n📝 {clean_title}\n🔗 {full_link}'
                           encoded_msg = urllib.parse.quote(msg)
                           tg_url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage?chat_id={CHANNEL}&text={encoded_msg}&parse_mode=Markdown'
                           urllib.request.urlopen(tg_url, timeout=10)
