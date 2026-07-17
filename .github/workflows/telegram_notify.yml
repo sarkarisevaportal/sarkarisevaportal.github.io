@@ -1,60 +1,41 @@
-name: Send Sarkari Updates to Telegram
-on:
-  schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
-
-jobs:
-  check-updates:
-    runs-on: ubuntu-latest
-    env:
-      BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-      CHANNEL_USERNAME: "@sarkarisevaportaljkssb"
-    steps:
-      - uses: actions/checkout@v5
-      - name: Fetch Updates
+- name: Fetch and Notify
         run: |
           python3 -c "
-          import urllib.request, re, json, os, time, urllib.parse
+          import urllib.request, urllib.parse, re, os, json, time
           
-          # Sirf 5 main websites rakhi hain taaki timeout na ho
+          # Verified URLs (Updated)
           BOARDS = {
-              'JKSSB': 'https://jkssb.nic.in/Pages/WhatsNew.aspx',
-              'SBI': 'https://www.sbi.co.in/careers/current-openings',
-              'JKPSC': 'https://jkpsc.nic.in/LatestNews.html',
-              'UPSC': 'https://upsc.gov.in/whats-new',
-              'KVS': 'https://kvsangathan.nic.in/recruitment'
+              'JKSSB': 'https://jkssb.nic.in/Pages/Applicant/Jobs.aspx',
+              'SBI': 'https://sbi.co.in/web/careers/current-openings',
+              'JKPSC': 'https://jkpsc.nic.in/content/latest-news',
+              'UPSC': 'https://upsc.gov.in/latest-news'
           }
           
-          HEADERS = {'User-Agent': 'Mozilla/5.0'}
-          
+          HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
+          BOT_TOKEN = '${{ secrets.TELEGRAM_TOKEN }}'
+          CHAT_ID = '${{ secrets.CHANNEL_USERNAME }}' # '@sarkarisevaportaljkssb'
+
           for name, url in BOARDS.items():
               try:
                   req = urllib.request.Request(url, headers=HEADERS)
-                  with urllib.request.urlopen(req, timeout=10) as response:
+                  with urllib.request.urlopen(req, timeout=15) as response:
                       html = response.read().decode('utf-8', errors='ignore')
-                      
-                  hist_file = f'history_{name}.json'
-                  history = json.load(open(hist_file)) if os.path.exists(hist_file) else []
                   
-                  # Regex jo link aur title uthaye
-                  matches = re.findall(r'<a\s+href=[\'\"]([^\'\"]+)[\'\"][^>]*>(.*?)</a>', html, re.I | re.S)
+                  # Regex to find links
+                  links = re.findall(r'<a\s+href=[\'\"]([^\'\"]+)[\'\"][^>]*>(.*?)</a>', html, re.I | re.S)
                   
                   count = 0
-                  for link, title in matches:
+                  for link, title in links:
                       clean_title = re.sub(r'<[^>]+>', '', title).strip()
-                      full_link = urllib.parse.urljoin(url, link)
-                      
-                      if len(clean_title) > 20 and full_link not in history and count < 2:
-                          msg = f'🆕 *New Update*\n\nDept: {name}\nUpdate: {clean_title}\n\n{full_link}'
-                          # Telegram API call
-                          params = urllib.parse.urlencode({'chat_id': '${{secrets.TELEGRAM_TOKEN}}', 'text': msg, 'parse_mode': 'Markdown'})
-                          # Yahan direct request bhejein
-                          history.insert(0, full_link)
+                      if len(clean_title) > 25 and count < 1:
+                          full_link = urllib.parse.urljoin(url, link)
+                          # Send to Telegram
+                          msg = f'🆕 *Update:* {name}\n📝 {clean_title}\n🔗 {full_link}'
+                          encoded_msg = urllib.parse.quote(msg)
+                          tg_url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage?chat_id={CHAT_ID}&text={encoded_msg}&parse_mode=Markdown'
+                          urllib.request.urlopen(tg_url, timeout=10)
                           count += 1
-                          time.sleep(1)
-                          
-                  json.dump(history[:20], open(hist_file, 'w'))
+                          time.sleep(2)
               except Exception as e:
-                  print(f'Error on {name}: {e}')
+                  print(f'Skipping {name}: {e}')
           "
