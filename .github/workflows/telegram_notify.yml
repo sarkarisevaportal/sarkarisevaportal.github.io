@@ -1,41 +1,51 @@
-- name: Fetch and Notify
+name: Send Sarkari Updates to Telegram
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fetch and Notify
         run: |
+          echo "8.8.8.8 google-dns" | sudo tee -a /etc/hosts
           python3 -c "
-          import urllib.request, urllib.parse, re, os, json, time
+          import urllib.request, urllib.parse, re, time
           
-          # Verified URLs (Updated)
           BOARDS = {
               'JKSSB': 'https://jkssb.nic.in/Pages/Applicant/Jobs.aspx',
-              'SBI': 'https://sbi.co.in/web/careers/current-openings',
               'JKPSC': 'https://jkpsc.nic.in/content/latest-news',
-              'UPSC': 'https://upsc.gov.in/latest-news'
+              'JKHC': 'https://jkhighcourt.nic.in/recruitment.php',
+              'SBI': 'https://sbi.co.in/web/careers/current-openings',
+              'UPSC': 'https://upsc.gov.in/latest-news',
+              'SSC': 'https://ssc.gov.in/candidate-corner/tentative-answer-keys'
           }
           
-          HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
+          HEADERS = {'User-Agent': 'Mozilla/5.0'}
           BOT_TOKEN = '${{ secrets.TELEGRAM_TOKEN }}'
-          CHAT_ID = '${{ secrets.CHANNEL_USERNAME }}' # '@sarkarisevaportaljkssb'
+          CHANNEL = '@sarkarisevaportaljkssb'
 
           for name, url in BOARDS.items():
               try:
                   req = urllib.request.Request(url, headers=HEADERS)
                   with urllib.request.urlopen(req, timeout=15) as response:
                       html = response.read().decode('utf-8', errors='ignore')
-                  
-                  # Regex to find links
                   links = re.findall(r'<a\s+href=[\'\"]([^\'\"]+)[\'\"][^>]*>(.*?)</a>', html, re.I | re.S)
-                  
                   count = 0
                   for link, title in links:
                       clean_title = re.sub(r'<[^>]+>', '', title).strip()
-                      if len(clean_title) > 25 and count < 1:
+                      if len(clean_title) > 20 and count < 1:
                           full_link = urllib.parse.urljoin(url, link)
-                          # Send to Telegram
-                          msg = f'🆕 *Update:* {name}\n📝 {clean_title}\n🔗 {full_link}'
+                          msg = f'🆕 *New Update*\n\n🏢 Dept: {name}\n📝 {clean_title}\n\n🔗 {full_link}'
                           encoded_msg = urllib.parse.quote(msg)
-                          tg_url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage?chat_id={CHAT_ID}&text={encoded_msg}&parse_mode=Markdown'
+                          tg_url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage?chat_id={CHANNEL}&text={encoded_msg}&parse_mode=Markdown'
                           urllib.request.urlopen(tg_url, timeout=10)
                           count += 1
                           time.sleep(2)
               except Exception as e:
-                  print(f'Skipping {name}: {e}')
+                  print(f'Skipped {name}: {e}')
           "
