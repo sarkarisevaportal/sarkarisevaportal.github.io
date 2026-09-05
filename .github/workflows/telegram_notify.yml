@@ -25,14 +25,14 @@ jobs:
 
       - name: One-time state synchronization
         run: |
-          if [ ! -f ".state_version" ] || [ "$(cat .state_version)" != "v12" ]; then
+          if [ ! -f ".state_version" ] || [ "$(cat .state_version)" != "v13" ]; then
             echo "Synchronizing state files..."
             rm -f last_*.txt history_*.json
-            echo "v12" > .state_version
+            echo "v13" > .state_version
             git config user.name "github-actions"
             git config user.email "github-actions@github.com"
             git add -A
-            git diff --cached --quiet || (git commit -m "Reset state for v12 direct universal logic" && git pull --rebase origin main && git push)
+            git diff --cached --quiet || (git commit -m "Reset state for v13 robust validation" && git pull --rebase origin main && git push)
           fi
 
       - name: Fetch Blogger RSS and Notify
@@ -94,7 +94,6 @@ jobs:
           python3 - <<'PYEOF'
           import urllib.request, urllib.parse, re, os, json, time
 
-          # Direct official sources & robust boards list
           BOARDS = {
               'UPSC': ('https://jkinfo.in/page.php?b=UPSC', '🏛️', 'UPSC'),
               'SSC': ('https://jkinfo.in/page.php?b=SSCNWR', '📝', 'SSC (North Western Region)'),
@@ -123,7 +122,6 @@ jobs:
           HISTORY_LIMIT = 60
           MAX_PER_BOARD = 2
           
-          # Strict filter to ignore navigation/footer junk links
           IGNORE_WORDS = {
               'terms of service', 'privacy policy', 'home', 'contact us', 'about us', 
               'download app', 'android app', 'disclaimer', 'sitemap', 'feedback',
@@ -144,8 +142,7 @@ jobs:
               return ''
 
           def clean_title(raw):
-              clean = re.sub(r'\s+', ' ', re.sub(r'<[^<]+?>', '', raw)).strip()
-              return clean
+              return re.sub(r'\s+', ' ', re.sub(r'<[^<]+?>', '', raw)).strip()
 
           def load_history(name):
               path = f'history_{name}.json'
@@ -181,7 +178,6 @@ jobs:
 
               for link, raw_title in matches:
                   title = clean_title(raw_title)
-                  # Validation: title length should be meaningful and not in ignore list
                   if not link or link.strip().startswith(('#', 'javascript', 'mailto', 'tel:')):
                       continue
                   if len(title) < 15 or title.lower() in IGNORE_WORDS:
@@ -191,6 +187,10 @@ jobs:
 
                   full_link = urllib.parse.urljoin(url, link)
                   
+                  # Verify link is valid HTTP/HTTPS
+                  if not full_link.startswith(('http://', 'https://')):
+                      continue
+
                   if full_link not in new_links_for_history and full_link not in hist_set:
                       new_links_for_history.append(full_link)
                       if board_new_count < MAX_PER_BOARD:
