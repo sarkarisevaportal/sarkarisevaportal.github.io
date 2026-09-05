@@ -23,72 +23,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: One-time state synchronization
-        run: |
-          if [ ! -f ".state_version" ] || [ "$(cat .state_version)" != "v13" ]; then
-            echo "Synchronizing state files..."
-            rm -f last_*.txt history_*.json
-            echo "v13" > .state_version
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git add -A
-            git diff --cached --quiet || (git commit -m "Reset state for v13 robust validation" && git pull --rebase origin main && git push)
-          fi
-
-      - name: Fetch Blogger RSS and Notify
-        run: |
-          RESULT=$(python3 - <<'EOF'
-          import urllib.request
-          import xml.etree.ElementTree as ET
-          import os
-          import time
-
-          url = "https://www.indiagovtjobs.in/feeds/posts/default"
-          headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-          root = None
-          for attempt in range(4):
-              try:
-                  req = urllib.request.Request(url, headers=headers)
-                  resp = urllib.request.urlopen(req, timeout=20)
-                  root = ET.parse(resp).getroot()
-                  break
-              except Exception:
-                  if attempt < 3:
-                      time.sleep(5)
-          if root is None:
-              exit(0)
-          ns = {'atom': 'http://www.w3.org/2005/Atom'}
-          entry = root.find('atom:entry', ns)
-          if entry is None:
-              exit(0)
-          title = entry.find('atom:title', ns).text
-          link = entry.find("atom:link[@rel='alternate']", ns).get('href')
-          history = []
-          if os.path.exists("history_BLOGGER.json"):
-              import json
-              try:
-                  history = json.load(open("history_BLOGGER.json"))
-              except Exception:
-                  history = []
-          if link in history:
-              exit(0)
-          import json
-          history = [link] + history
-          json.dump(history[:60], open("history_BLOGGER.json", "w"))
-          print(f"{title}||{link}")
-          EOF
-          )
-          if [ -n "$RESULT" ]; then
-            TITLE="${RESULT%%||*}"
-            LINK="${RESULT##*||}"
-            MESSAGE="🆕 *New Update!*%0A%0A📰 Website: *Sarkari Jobs*%0A📝 Update: ${TITLE}%0A%0A📢 ${OWN_SITE}"
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-              -d "chat_id=${CHANNEL_USERNAME}" -d "text=${MESSAGE}" -d "parse_mode=Markdown" > /dev/null
-            echo "Sent Blogger update: $TITLE"
-          else
-            echo "No new Blogger post."
-          fi
-
       - name: Fetch all recruitment boards reliably
         run: |
           python3 - <<'PYEOF'
@@ -119,7 +53,7 @@ jobs:
           }
 
           HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-          HISTORY_LIMIT = 60
+          HISTORY_LIMIT = 80
           MAX_PER_BOARD = 2
           
           IGNORE_WORDS = {
@@ -187,12 +121,15 @@ jobs:
 
                   full_link = urllib.parse.urljoin(url, link)
                   
-                  # Verify link is valid HTTP/HTTPS
                   if not full_link.startswith(('http://', 'https://')):
                       continue
 
-                  if full_link not in new_links_for_history and full_link not in hist_set:
+                  # Track all found links for history so they never trigger again
+                  if full_link not in new_links_for_history:
                       new_links_for_history.append(full_link)
+
+                  # Only send if it's strictly NOT in past history
+                  if full_link not in hist_set:
                       if board_new_count < MAX_PER_BOARD:
                           all_results.append({
                               'name': name,
@@ -203,6 +140,7 @@ jobs:
                           })
                           board_new_count += 1
 
+              # Save combined history immediately
               if new_links_for_history:
                   save_history(name, new_links_for_history + history)
 
@@ -239,7 +177,7 @@ jobs:
           git config user.email "github-actions@github.com"
           git add history_*.json 2>/dev/null || true
           if ! git diff --cached --quiet; then
-            git commit -m "Update universal board notification history"
+            git commit -m "Auto-update notification history to prevent duplicates"
             for i in 1 2 3; do
               git pull --rebase origin main && git push && break
               sleep 5
