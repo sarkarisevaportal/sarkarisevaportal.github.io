@@ -1,4 +1,5 @@
 name: Send Sarkari Updates to Telegram
+
 on:
   schedule:
     - cron: '0 * * * *'
@@ -22,26 +23,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: One-time reset of old/stale state files
+      - name: One-time state synchronization
         run: |
-          if [ ! -f ".state_version" ] || [ "$(cat .state_version)" != "v10" ]; then
-            echo "Resetting old state files (first run on v10 logic)..."
+          if [ ! -f ".state_version" ] || [ "$(cat .state_version)" != "v11" ]; then
+            echo "Synchronizing state files..."
             rm -f last_*.txt history_*.json
-            echo "v10" > .state_version
+            echo "v11" > .state_version
             git config user.name "github-actions"
             git config user.email "github-actions@github.com"
             git add -A
-            git diff --cached --quiet || (git commit -m "Reset stale state files for v10 logic" && git pull --rebase origin main && git push)
-          else
-            echo "State already on v10, no reset needed."
-          fi
-
-      - name: Resolve DNS via Google (workaround for runner DNS issues)
-        run: |
-          IP=$(curl -s "https://dns.google/resolve?name=www.indiagovtjobs.in&type=A" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['Answer'][0]['data'])" 2>/dev/null || true)
-          if [ -n "$IP" ]; then
-            echo "$IP www.indiagovtjobs.in" | sudo tee -a /etc/hosts
+            git diff --cached --quiet || (git commit -m "Reset state for v11 universal logic" && git pull --rebase origin main && git push)
           fi
 
       - name: Fetch Blogger RSS and Notify
@@ -55,19 +46,21 @@ jobs:
           url = "https://www.indiagovtjobs.in/feeds/posts/default"
           headers = {"User-Agent": "Mozilla/5.0 (compatible; SarkariSevaBot/1.0)"}
           root = None
-          for attempt in range(6):
+          for attempt in range(4):
               try:
                   req = urllib.request.Request(url, headers=headers)
                   resp = urllib.request.urlopen(req, timeout=20)
                   root = ET.parse(resp).getroot()
                   break
               except Exception:
-                  if attempt < 5:
-                      time.sleep(10)
+                  if attempt < 3:
+                      time.sleep(5)
           if root is None:
               exit(0)
           ns = {'atom': 'http://www.w3.org/2005/Atom'}
           entry = root.find('atom:entry', ns)
+          if entry is None:
+              exit(0)
           title = entry.find('atom:title', ns).text
           link = entry.find("atom:link[@rel='alternate']", ns).get('href')
           history = []
@@ -96,115 +89,63 @@ jobs:
             echo "No new Blogger post."
           fi
 
-      - name: Fetch all boards with signature validation
+      - name: Fetch all recruitment boards reliably
         run: |
-          python3 - <<'PYEOF'
-          import urllib.request
-          import urllib.parse
-          import re
-          import os
-          import json
-          import time
+          python3 -c "
+          import urllib.request, urllib.parse, re, os, json, time
 
-          # boards hosted on jkinfo.in aggregator - verified board codes
-          JKINFO_BOARDS = {
-              "UPSC":            ("UPSC",       "🏛️", "UPSC"),
-              "SSC":             ("SSCNWR",     "📝", "SSC (North Western Region)"),
-              "IBPS":            ("IBPS",       "🏦", "IBPS"),
-              "NTA":             ("CBSENET",    "🎓", "NTA"),
-              "JKSSB":           ("JKSSB",      "📌", "JKSSB"),
-              "JKPSC":           ("JKPSC",      "🏢", "JKPSC"),
-              "JKHC":            ("JKHC",       "⚖️", "J&K High Court"),
-              "JammuUniv":       ("JU",         "🎓", "University of Jammu"),
-              "KashmirUniv":     ("KU",         "🎓", "University of Kashmir"),
-              "CentralUnivJammu":   ("CUJammu", "🎓", "Central University Jammu"),
-              "CentralUnivKashmir":("CUK",      "🎓", "Central University Kashmir"),
-              "BGSBU":           ("BGSBU",      "🎓", "BGSB University"),
-              "SMVDU":           ("SMVDU",      "🎓", "SMVD University"),
-              "IUST":            ("IUST",       "🎓", "IUST"),
-              "SKUAST_Jammu":    ("SKUASTJ",    "🎓", "SKUAST Jammu"),
-              "SKUAST_Kashmir":  ("SKUASTK",    "🎓", "SKUAST Kashmir"),
-              "KVS":             ("KVS",        "🏫", "KVS"),
+          # All target boards with their direct or aggregator endpoints
+          BOARDS = {
+              'UPSC': ('https://jkinfo.in/page.php?b=UPSC', '🏛️', 'UPSC'),
+              'SSC': ('https://jkinfo.in/page.php?b=SSCNWR', '📝', 'SSC (North Western Region)'),
+              'IBPS': ('https://jkinfo.in/page.php?b=IBPS', '🏦', 'IBPS'),
+              'NTA': ('https://jkinfo.in/page.php?b=CBSENET', '🎓', 'NTA'),
+              'JKSSB': ('https://jkinfo.in/page.php?b=JKSSB', '📌', 'JKSSB'),
+              'JKPSC': ('https://jkinfo.in/page.php?b=JKPSC', '🏢', 'JKPSC'),
+              'JKHC': ('https://jkinfo.in/page.php?b=JKHC', '⚖️', 'J&K High Court'),
+              'JammuUniv': ('https://jkinfo.in/page.php?b=JU', '🎓', 'University of Jammu'),
+              'KashmirUniv': ('https://jkinfo.in/page.php?b=KU', '🎓', 'University of Kashmir'),
+              'CentralUnivJammu': ('https://jkinfo.in/page.php?b=CUJammu', '🎓', 'Central University Jammu'),
+              'CentralUnivKashmir': ('https://jkinfo.in/page.php?b=CUK', '🎓', 'Central University Kashmir'),
+              'BGSBU': ('https://jkinfo.in/page.php?b=BGSBU', '🎓', 'BGSB University'),
+              'SMVDU': ('https://jkinfo.in/page.php?b=SMVDU', '🎓', 'SMVD University'),
+              'IUST': ('https://jkinfo.in/page.php?b=IUST', '🎓', 'IUST'),
+              'SKUAST_Jammu': ('https://jkinfo.in/page.php?b=SKUASTJ', '🎓', 'SKUAST Jammu'),
+              'SKUAST_Kashmir': ('https://jkinfo.in/page.php?b=SKUASTK', '🎓', 'SKUAST Kashmir'),
+              'KVS': ('https://jkinfo.in/page.php?b=KVS', '🏫', 'KVS'),
+              'SBI': ('https://www.sbi.co.in/web/careers/current-openings', '🏦', 'SBI'),
+              'RRB_Jammu': ('https://www.rrbjammu.nic.in/', '🚆', 'RRB Jammu'),
+              'EMRS': ('https://nests.tribal.gov.in/show_content.php?lang=1&level=1&ls_id=364&lid=148', '🏫', 'EMRS'),
+              'NVS': ('https://navodaya.gov.in/nvs/en/Recruitment/Notification-Vacancies/', '🏫', 'NVS')
           }
 
-          # sites not covered by jkinfo.in - fetched directly, filtered by document-link requirement
-          DIRECT_BOARDS = {
-              "SBI":          ("https://www.sbi.co.in/careers/current-openings", "🏦", "SBI"),
-              "RRB_Jammu":    ("https://www.rrbjammu.nic.in/",                   "🚆", "RRB Jammu"),
-              "RRB_Central":  ("https://www.rrcb.gov.in/",                       "🚆", "RRB Central"),
-              "EMRS":         ("https://nests.tribal.gov.in/show_content.php?lang=1&level=1&ls_id=364&lid=148", "🏫", "EMRS"),
-              "NVS":          ("https://navodaya.gov.in/nvs/en/Recruitment/Notification-Vacancies/", "🏫", "NVS"),
-          }
-
-          HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; SarkariSevaBot/1.0)"}
+          HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
           HISTORY_LIMIT = 60
-          MAX_CANDIDATES = 8
-          TIME_AGO_RE = re.compile(r'\(\s*\d+\s+(?:hour|day|week|month|year)s?\s+ago\s*\)', re.I)
-          DOC_EXT_RE = re.compile(r'\.(pdf|docx?|xlsx?)(\?|$)', re.I)
+          MAX_PER_BOARD = 3
+          
           BAD_TITLES = {
-              "list of websites", "home", "contact us", "about us", "download app",
-              "android app", "privacy policy", "disclaimer", "sitemap", "feedback",
-              "login", "register", "contact", "about", "help", "faq", "terms",
-              "notification", "notifications", "recruitment", "vacancies", "view",
+              'list of websites', 'home', 'contact us', 'about us', 'download app',
+              'android app', 'privacy policy', 'disclaimer', 'sitemap', 'feedback',
+              'login', 'register', 'contact', 'about', 'help', 'faq', 'terms',
+              'notification', 'notifications', 'recruitment', 'vacancies', 'view', 'click here'
           }
 
           def fetch(url):
-              for attempt in range(4):
+              for attempt in range(3):
                   try:
                       req = urllib.request.Request(url, headers=HEADERS)
                       resp = urllib.request.urlopen(req, timeout=20)
-                      return resp.read().decode("utf-8", errors="ignore")
+                      return resp.read().decode('utf-8', errors='ignore')
                   except Exception:
-                      if attempt < 3:
-                          time.sleep(6)
-              return None
+                      if attempt < 2:
+                          time.sleep(4)
+              return ''
 
           def clean_title(raw):
               return re.sub(r'\s+', ' ', re.sub(r'<[^<]+?>', '', raw)).strip()
 
-          def basic_valid(link, title):
-              if not link or link.strip() in ("#", "", "javascript:void(0)"):
-                  return False
-              if not link.startswith("http") and not link.startswith("/"):
-                  return False
-              t = clean_title(title).lower()
-              if len(t) < 10 or t in BAD_TITLES:
-                  return False
-              return True
-
-          def jkinfo_candidates(html, base_url):
-              """Only accept items followed shortly by a '(X ago)' signature - real notices only."""
-              out = []
-              for m in re.finditer(r'<a\s+href="([^"]+)"[^>]*>\s*<b>(.*?)</b>', html, re.S):
-                  link, title = m.group(1), m.group(2)
-                  if not basic_valid(link, title):
-                      continue
-                  trailing = html[m.end(): m.end() + 200]
-                  if not TIME_AGO_RE.search(trailing):
-                      continue
-                  full_link = urllib.parse.urljoin(base_url, link)
-                  out.append((full_link, clean_title(title)))
-                  if len(out) >= MAX_CANDIDATES:
-                      break
-              return out
-
-          def direct_candidates(html, base_url):
-              """No 'time ago' signature available - require a real document link instead."""
-              out = []
-              for m in re.finditer(r'<a\s+href="([^"]+)"[^>]*>\s*([^<]{15,200})</a>', html, re.S):
-                  link, title = m.group(1), m.group(2)
-                  if not basic_valid(link, title):
-                      continue
-                  full_link = urllib.parse.urljoin(base_url, link)
-                  if not DOC_EXT_RE.search(full_link):
-                      continue
-                  out.append((full_link, clean_title(title)))
-                  if len(out) >= MAX_CANDIDATES:
-                      break
-              return out
-
           def load_history(name):
-              path = f"history_{name}.json"
+              path = f'history_{name}.json'
               if os.path.exists(path):
                   try:
                       return json.load(open(path))
@@ -219,92 +160,74 @@ jobs:
                   if l not in seen:
                       seen.add(l)
                       deduped.append(l)
-              json.dump(deduped[:HISTORY_LIMIT], open(f"history_{name}.json", "w"))
-
-          def try_pdf(name, link):
-              try:
-                  req = urllib.request.Request(link, headers=HEADERS)
-                  resp = urllib.request.urlopen(req, timeout=25)
-                  ctype = resp.headers.get("Content-Type", "")
-                  if "pdf" in ctype.lower() or link.lower().endswith(".pdf"):
-                      data = resp.read()
-                      path = f"pdf_{name}.pdf"
-                      open(path, "wb").write(data)
-                      return path
-              except Exception:
-                  pass
-              return None
-
-          def process(name, candidates, emoji, label):
-              history = load_history(name)
-              hist_set = set(history)
-              new_items = [(l, t) for l, t in candidates if l not in hist_set]
-              if not new_items:
-                  return []
-              results = []
-              for link, title in new_items:
-                  pdf_path = try_pdf(name, link)
-                  results.append({"name": name, "emoji": emoji, "label": label, "title": title, "link": link, "pdf": pdf_path})
-              save_history(name, [l for l, t in new_items] + history)
-              return results
+              json.dump(deduped[:HISTORY_LIMIT], open(f'history_{name}.json', 'w'))
 
           all_results = []
 
-          for key, (code, emoji, label) in JKINFO_BOARDS.items():
-              html = fetch(f"https://jkinfo.in/page.php?b={code}")
-              if not html:
-                  print(f"[DEBUG] {key}: FETCH FAILED")
-                  continue
-              candidates = jkinfo_candidates(html, "https://jkinfo.in/")
-              hist = load_history(key)
-              new_count = len([c for c in candidates if c[0] not in set(hist)])
-              print(f"[DEBUG] {key}: html_len={len(html)} candidates={len(candidates)} history_size={len(hist)} genuinely_new={new_count}")
-              all_results.extend(process(key, candidates, emoji, label))
-
-          for key, (url, emoji, label) in DIRECT_BOARDS.items():
+          for name, (url, emoji, label) in BOARDS.items():
               html = fetch(url)
               if not html:
-                  print(f"[DEBUG] {key}: FETCH FAILED")
+                  print(f'[DEBUG] {name}: Fetch failed')
                   continue
-              candidates = direct_candidates(html, url)
-              hist = load_history(key)
-              new_count = len([c for c in candidates if c[0] not in set(hist)])
-              print(f"[DEBUG] {key}: html_len={len(html)} candidates={len(candidates)} history_size={len(hist)} genuinely_new={new_count}")
-              all_results.extend(process(key, candidates, emoji, label))
 
-          json.dump(all_results, open("notify_results.json", "w"))
-          print(f"Found {len(all_results)} new updates across all boards")
+              # Extract all anchor tags universally
+              matches = re.findall(r'<a\s+href=[\'\"]([^\'\"]+)[\'\"][^>]*>(.*?)</a>', html, re.I | re.S)
+              history = load_history(name)
+              hist_set = set(history)
+              
+              board_new_count = 0
+              new_links_for_history = []
+
+              for link, raw_title in matches:
+                title = clean_title(raw_title)
+                if not link or link.strip() in ('#', '', 'javascript:void(0)') or len(title) < 12:
+                    continue
+                if title.lower() in BAD_TITLES:
+                    continue
+
+                full_link = urllib.parse.urljoin(url, link)
+                
+                # Track for history
+                if full_link not in new_links_for_history and full_link not in hist_set:
+                    new_links_for_history.append(full_link)
+                    if board_new_count < MAX_PER_BOARD:
+                        all_results.append({
+                            'name': name,
+                            'emoji': emoji,
+                            'label': label,
+                            'title': title,
+                            'link': full_link
+                        })
+                        board_new_count += 1
+
+              if new_links_for_history:
+                  save_history(name, new_links_for_history + history)
+              print(f'[DEBUG] {name}: found {len(new_links_for_history)} new valid updates')
+
+          json.dump(all_results, open('notify_results.json', 'w'))
+          print(f'Total accumulated updates to send: {len(all_results)}')
           PYEOF
 
           if [ -f notify_results.json ]; then
             python3 -c "
-          import json
-          data = json.load(open('notify_results.json'))
-          for r in data:
-              pdf = r['pdf'] or ''
-              print(f\"{r['name']}|{r['emoji']}|{r['label']}|{r['title']}|{r['link']}|{pdf}\")
-          " > notify_lines.txt
+            import json
+            data = json.load(open('notify_results.json'))
+            for r in data:
+                print(f\"{r['name']}|{r['emoji']}|{r['label']}|{r['title']}|{r['link']}\")
+            " > notify_lines.txt
 
-            while IFS='|' read -r NAME EMOJI LABEL TITLE LINK PDF; do
+            while IFS='|' read -r NAME EMOJI LABEL TITLE LINK; do
               [ -z "$NAME" ] && continue
-              CAPTION=$(printf '🆕 *New Update!*\n\n%s Website: *%s*\n📝 Update: %s\n\n📢 %s' "$EMOJI" "$LABEL" "$TITLE" "$OWN_SITE")
-
-              if [ -n "$PDF" ] && [ -s "$PDF" ]; then
-                TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
-                  -F "chat_id=${CHANNEL_USERNAME}" \
-                  -F "caption=${CAPTION}" \
-                  -F "parse_mode=Markdown" \
-                  -F "document=@${PDF}" || echo '{"ok":false}')
-              else
-                MESSAGE="🆕 *New Update!*%0A%0A${EMOJI} Website: *${LABEL}*%0A📝 Update: ${TITLE}%0A%0A📢 ${OWN_SITE}"
-                TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-                  -d "chat_id=${CHANNEL_USERNAME}" -d "text=${MESSAGE}" -d "parse_mode=Markdown" || echo '{"ok":false}')
-              fi
+              MESSAGE="🆕 *New Update!*%0A%0A${EMOJI} Website: *${LABEL}*%0A📝 Update: ${TITLE}%0A%0A🔗 ${LINK}%0A%0A📢 ${OWN_SITE}"
+              
+              TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                -d "chat_id=${CHANNEL_USERNAME}" -d "text=${MESSAGE}" -d "parse_mode=Markdown" || echo '{"ok":false}')
+              
               echo "Sent (${NAME}): $TG_RESPONSE"
-              sleep 1
+              sleep 1.5
             done < notify_lines.txt || true
           else
-            echo "No new board updates found."
+            echo "No new updates found."
           fi
 
       - name: Commit updated history files
@@ -314,7 +237,7 @@ jobs:
           git config user.email "github-actions@github.com"
           git add history_*.json 2>/dev/null || true
           if ! git diff --cached --quiet; then
-            git commit -m "Update notification history"
+            git commit -m "Update universal board notification history"
             for i in 1 2 3; do
               git pull --rebase origin main && git push && break
               sleep 5
