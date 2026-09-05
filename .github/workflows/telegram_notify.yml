@@ -91,10 +91,9 @@ jobs:
 
       - name: Fetch all recruitment boards reliably
         run: |
-          python3 -c "
+          python3 - <<'PYEOF'
           import urllib.request, urllib.parse, re, os, json, time
 
-          # All target boards with their direct or aggregator endpoints
           BOARDS = {
               'UPSC': ('https://jkinfo.in/page.php?b=UPSC', '🏛️', 'UPSC'),
               'SSC': ('https://jkinfo.in/page.php?b=SSCNWR', '📝', 'SSC (North Western Region)'),
@@ -167,10 +166,8 @@ jobs:
           for name, (url, emoji, label) in BOARDS.items():
               html = fetch(url)
               if not html:
-                  print(f'[DEBUG] {name}: Fetch failed')
                   continue
 
-              # Extract all anchor tags universally
               matches = re.findall(r'<a\s+href=[\'\"]([^\'\"]+)[\'\"][^>]*>(.*?)</a>', html, re.I | re.S)
               history = load_history(name)
               hist_set = set(history)
@@ -179,35 +176,34 @@ jobs:
               new_links_for_history = []
 
               for link, raw_title in matches:
-                title = clean_title(raw_title)
-                if not link or link.strip() in ('#', '', 'javascript:void(0)') or len(title) < 12:
-                    continue
-                if title.lower() in BAD_TITLES:
-                    continue
+                  title = clean_title(raw_title)
+                  if not link or link.strip() in ('#', '', 'javascript:void(0)') or len(title) < 12:
+                      continue
+                  if title.lower() in BAD_TITLES:
+                      continue
 
-                full_link = urllib.parse.urljoin(url, link)
-                
-                # Track for history
-                if full_link not in new_links_for_history and full_link not in hist_set:
-                    new_links_for_history.append(full_link)
-                    if board_new_count < MAX_PER_BOARD:
-                        all_results.append({
-                            'name': name,
-                            'emoji': emoji,
-                            'label': label,
-                            'title': title,
-                            'link': full_link
-                        })
-                        board_new_count += 1
+                  full_link = urllib.parse.urljoin(url, link)
+                  
+                  if full_link not in new_links_for_history and full_link not in hist_set:
+                      new_links_for_history.append(full_link)
+                      if board_new_count < MAX_PER_BOARD:
+                          all_results.append({
+                              'name': name,
+                              'emoji': emoji,
+                              'label': label,
+                              'title': title,
+                              'link': full_link
+                          })
+                          board_new_count += 1
 
               if new_links_for_history:
                   save_history(name, new_links_for_history + history)
-              print(f'[DEBUG] {name}: found {len(new_links_for_history)} new valid updates')
 
           json.dump(all_results, open('notify_results.json', 'w'))
-          print(f'Total accumulated updates to send: {len(all_results)}')
           PYEOF
 
+      - name: Send notifications to Telegram
+        run: |
           if [ -f notify_results.json ]; then
             python3 -c "
             import json
@@ -220,10 +216,9 @@ jobs:
               [ -z "$NAME" ] && continue
               MESSAGE="🆕 *New Update!*%0A%0A${EMOJI} Website: *${LABEL}*%0A📝 Update: ${TITLE}%0A%0A🔗 ${LINK}%0A%0A📢 ${OWN_SITE}"
               
-              TG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-                -d "chat_id=${CHANNEL_USERNAME}" -d "text=${MESSAGE}" -d "parse_mode=Markdown" || echo '{"ok":false}')
+              curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                -d "chat_id=${CHANNEL_USERNAME}" -d "text=${MESSAGE}" -d "parse_mode=Markdown" > /dev/null
               
-              echo "Sent (${NAME}): $TG_RESPONSE"
               sleep 1.5
             done < notify_lines.txt || true
           else
