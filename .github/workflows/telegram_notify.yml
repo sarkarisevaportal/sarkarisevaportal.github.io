@@ -25,14 +25,14 @@ jobs:
 
       - name: One-time state synchronization
         run: |
-          if [ ! -f ".state_version" ] || [ "$(cat .state_version)" != "v11" ]; then
+          if [ ! -f ".state_version" ] || [ "$(cat .state_version)" != "v12" ]; then
             echo "Synchronizing state files..."
             rm -f last_*.txt history_*.json
-            echo "v11" > .state_version
+            echo "v12" > .state_version
             git config user.name "github-actions"
             git config user.email "github-actions@github.com"
             git add -A
-            git diff --cached --quiet || (git commit -m "Reset state for v11 universal logic" && git pull --rebase origin main && git push)
+            git diff --cached --quiet || (git commit -m "Reset state for v12 direct universal logic" && git pull --rebase origin main && git push)
           fi
 
       - name: Fetch Blogger RSS and Notify
@@ -44,7 +44,7 @@ jobs:
           import time
 
           url = "https://www.indiagovtjobs.in/feeds/posts/default"
-          headers = {"User-Agent": "Mozilla/5.0 (compatible; SarkariSevaBot/1.0)"}
+          headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
           root = None
           for attempt in range(4):
               try:
@@ -94,6 +94,7 @@ jobs:
           python3 - <<'PYEOF'
           import urllib.request, urllib.parse, re, os, json, time
 
+          # Direct official sources & robust boards list
           BOARDS = {
               'UPSC': ('https://jkinfo.in/page.php?b=UPSC', '🏛️', 'UPSC'),
               'SSC': ('https://jkinfo.in/page.php?b=SSCNWR', '📝', 'SSC (North Western Region)'),
@@ -111,29 +112,31 @@ jobs:
               'IUST': ('https://jkinfo.in/page.php?b=IUST', '🎓', 'IUST'),
               'SKUAST_Jammu': ('https://jkinfo.in/page.php?b=SKUASTJ', '🎓', 'SKUAST Jammu'),
               'SKUAST_Kashmir': ('https://jkinfo.in/page.php?b=SKUASTK', '🎓', 'SKUAST Kashmir'),
-              'KVS': ('https://jkinfo.in/page.php?b=KVS', '🏫', 'KVS'),
+              'KVS': ('https://kvsangathan.nic.in/announcements', '🏫', 'KVS'),
               'SBI': ('https://www.sbi.co.in/web/careers/current-openings', '🏦', 'SBI'),
               'RRB_Jammu': ('https://www.rrbjammu.nic.in/', '🚆', 'RRB Jammu'),
               'EMRS': ('https://nests.tribal.gov.in/show_content.php?lang=1&level=1&ls_id=364&lid=148', '🏫', 'EMRS'),
               'NVS': ('https://navodaya.gov.in/nvs/en/Recruitment/Notification-Vacancies/', '🏫', 'NVS')
           }
 
-          HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+          HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
           HISTORY_LIMIT = 60
-          MAX_PER_BOARD = 3
+          MAX_PER_BOARD = 2
           
-          BAD_TITLES = {
-              'list of websites', 'home', 'contact us', 'about us', 'download app',
-              'android app', 'privacy policy', 'disclaimer', 'sitemap', 'feedback',
+          # Strict filter to ignore navigation/footer junk links
+          IGNORE_WORDS = {
+              'terms of service', 'privacy policy', 'home', 'contact us', 'about us', 
+              'download app', 'android app', 'disclaimer', 'sitemap', 'feedback',
               'login', 'register', 'contact', 'about', 'help', 'faq', 'terms',
-              'notification', 'notifications', 'recruitment', 'vacancies', 'view', 'click here'
+              'notification', 'notifications', 'recruitment', 'vacancies', 'view', 
+              'click here', 'read more', 'skip to main content', 'screen reader'
           }
 
           def fetch(url):
               for attempt in range(3):
                   try:
                       req = urllib.request.Request(url, headers=HEADERS)
-                      resp = urllib.request.urlopen(req, timeout=20)
+                      resp = urllib.request.urlopen(req, timeout=25)
                       return resp.read().decode('utf-8', errors='ignore')
                   except Exception:
                       if attempt < 2:
@@ -141,7 +144,8 @@ jobs:
               return ''
 
           def clean_title(raw):
-              return re.sub(r'\s+', ' ', re.sub(r'<[^<]+?>', '', raw)).strip()
+              clean = re.sub(r'\s+', ' ', re.sub(r'<[^<]+?>', '', raw)).strip()
+              return clean
 
           def load_history(name):
               path = f'history_{name}.json'
@@ -168,7 +172,7 @@ jobs:
               if not html:
                   continue
 
-              matches = re.findall(r'<a\s+href=[\'\"]([^\'\"]+)[\'\"][^>]*>(.*?)</a>', html, re.I | re.S)
+              matches = re.findall(r'<a\s+[^>]*href=[\'\"]([^\'\"]+)[\'\"][^>]*>(.*?)</a>', html, re.I | re.S)
               history = load_history(name)
               hist_set = set(history)
               
@@ -177,9 +181,12 @@ jobs:
 
               for link, raw_title in matches:
                   title = clean_title(raw_title)
-                  if not link or link.strip() in ('#', '', 'javascript:void(0)') or len(title) < 12:
+                  # Validation: title length should be meaningful and not in ignore list
+                  if not link or link.strip().startswith(('#', 'javascript', 'mailto', 'tel:')):
                       continue
-                  if title.lower() in BAD_TITLES:
+                  if len(title) < 15 or title.lower() in IGNORE_WORDS:
+                      continue
+                  if any(bad in title.lower() for bad in ['privacy policy', 'terms of service', 'sitemap', 'cookie policy']):
                       continue
 
                   full_link = urllib.parse.urljoin(url, link)
@@ -204,8 +211,8 @@ jobs:
 
       - name: Send notifications to Telegram
         run: |
-          python3 -c "
-          import json, os, urllib.request, urllib.parse
+          python3 - <<'PYEOF'
+          import json, os, urllib.request, urllib.parse, time
           if os.path.exists('notify_results.json'):
               try:
                   data = json.load(open('notify_results.json'))
@@ -213,17 +220,17 @@ jobs:
                   channel = os.environ.get('CHANNEL_USERNAME')
                   own_site = os.environ.get('OWN_SITE')
                   for r in data:
-                      msg = f'🆕 *New Update!*\\n\\n{r[\"emoji\"]} Website: *{r[\"label\"]}*/\\n📝 Update: {r[\"title\"]}\\n\\n🔗 {r[\"link\"]}\\n\\n📢 {own_site}'
+                      msg = f"🆕 *New Update!*\n\n{r['emoji']} Website: *{r['label']}*\n📝 Update: {r['title']}\n\n🔗 {r['link']}\n\n📢 {own_site}"
                       encoded_msg = urllib.parse.quote(msg)
-                      tg_url = f'https://api.telegram.org/bot{token}/sendMessage?chat_id={channel}&text={encoded_msg}&parse_mode=Markdown'
+                      tg_url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={channel}&text={encoded_msg}&parse_mode=Markdown"
                       try:
                           urllib.request.urlopen(tg_url, timeout=10)
                       except Exception as e:
-                          print(f'Failed to send: {e}')
+                          print(f"Failed to send: {e}")
                       time.sleep(1.5)
               except Exception as e:
-                  print(f'Error sending notifications: {e}')
-          "
+                  print(f"Error sending notifications: {e}")
+          PYEOF
 
       - name: Commit updated history files
         if: always()
