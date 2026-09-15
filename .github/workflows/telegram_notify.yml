@@ -2,7 +2,7 @@ name: Send Sarkari Updates to Telegram
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 */5 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -23,7 +23,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Fetch all recruitment boards reliably
+      - name: Fetch and Filter Recruitment Updates
         run: |
           python3 - <<'PYEOF'
           import urllib.request, urllib.parse, re, os, json, time
@@ -53,8 +53,8 @@ jobs:
           }
 
           HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-          HISTORY_LIMIT = 80
-          MAX_PER_BOARD = 2
+          HISTORY_LIMIT = 100
+          MAX_PER_BOARD = 1  # Sirf 1 sabse naya update per board taaki spam na ho
           
           IGNORE_WORDS = {
               'terms of service', 'privacy policy', 'home', 'contact us', 'about us', 
@@ -124,11 +124,10 @@ jobs:
                   if not full_link.startswith(('http://', 'https://')):
                       continue
 
-                  # Track all found links for history so they never trigger again
                   if full_link not in new_links_for_history:
                       new_links_for_history.append(full_link)
 
-                  # Only send if it's strictly NOT in past history
+                  # Strict check: Agar history me hai, to bilkul nahi bhejenge
                   if full_link not in hist_set:
                       if board_new_count < MAX_PER_BOARD:
                           all_results.append({
@@ -140,14 +139,13 @@ jobs:
                           })
                           board_new_count += 1
 
-              # Save combined history immediately
               if new_links_for_history:
                   save_history(name, new_links_for_history + history)
 
           json.dump(all_results, open('notify_results.json', 'w'))
           PYEOF
 
-      - name: Send notifications to Telegram
+      - name: Send Clean Notifications to Telegram
         run: |
           python3 - <<'PYEOF'
           import json, os, urllib.request, urllib.parse, time
@@ -158,30 +156,30 @@ jobs:
                   channel = os.environ.get('CHANNEL_USERNAME')
                   own_site = os.environ.get('OWN_SITE')
                   for r in data:
-                      msg = f"🆕 *New Update!*\n\n{r['emoji']} Website: *{r['label']}*\n📝 Update: {r['title']}\n\n🔗 {r['link']}\n\n📢 {own_site}"
+                      msg = f"🔔 *Latest Sarkari Update*\n\n{r['emoji']} *Board:* {r['label']}\n📌 *Update:* {r['title']}\n\n🔗 [Click Here to View Notice]({r['link']})\n\n🌐 Portal: {own_site}"
                       encoded_msg = urllib.parse.quote(msg)
                       tg_url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={channel}&text={encoded_msg}&parse_mode=Markdown"
                       try:
                           urllib.request.urlopen(tg_url, timeout=10)
                       except Exception as e:
                           print(f"Failed to send: {e}")
-                      time.sleep(1.5)
+                      time.sleep(2)
               except Exception as e:
                   print(f"Error sending notifications: {e}")
           PYEOF
 
-      - name: Commit updated history files
+      - name: Commit updated history permanently
         if: always()
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add history_*.json 2>/dev/null || true
           if ! git diff --cached --quiet; then
-            git commit -m "Auto-update notification history to prevent duplicates"
+            git commit -m "Permanent fix: update history to prevent duplicate alerts"
             for i in 1 2 3; do
               git pull --rebase origin main && git push && break
               sleep 5
             done
           else
-            echo "No history changes to commit."
+            echo "No new updates found to commit."
           fi
