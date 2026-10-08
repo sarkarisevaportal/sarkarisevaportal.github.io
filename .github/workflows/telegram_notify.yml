@@ -5,10 +5,6 @@ on:
     - cron: '0 */5 * * *'
   workflow_dispatch:
 
-concurrency:
-  group: sarkari-telegram-bot
-  cancel-in-progress: false
-
 permissions:
   contents: write
 
@@ -19,18 +15,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Run Scraper and Telegram Bot
+      - name: Run Scraper
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHANNEL_USERNAME: "@sarkarisevaportaljkssb"
           OWN_SITE: "https://sarkarisevaportal.github.io/"
         run: |
-          python scraper.py
+          python3 scraper.py
 
       - name: Commit and Push History
         if: always()
@@ -43,7 +34,5 @@ jobs:
               git commit -m "Update sent notification history [skip ci]"
               git pull --rebase origin main
               git push origin main
-            else
-              echo "No new updates to commit."
             fi
           fi
