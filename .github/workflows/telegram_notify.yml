@@ -5,6 +5,10 @@ on:
     - cron: '0 */5 * * *'
   workflow_dispatch:
 
+concurrency:
+  group: sarkari-telegram-bot
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -15,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run Scraper
+      - name: Execute Scraper Engine
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHANNEL_USERNAME: "@sarkarisevaportaljkssb"
@@ -23,7 +27,7 @@ jobs:
         run: |
           python3 scraper.py
 
-      - name: Commit and Push History
+      - name: Commit and Push History State
         if: always()
         run: |
           git config --global user.name "github-actions[bot]"
@@ -31,8 +35,10 @@ jobs:
           if [ -f sent_history.json ]; then
             git add sent_history.json
             if ! git diff --cached --quiet; then
-              git commit -m "Update sent notification history [skip ci]"
+              git commit -m "Update notification history state [skip ci]"
               git pull --rebase origin main
               git push origin main
+            else
+              echo "No state changes to commit."
             fi
           fi
