@@ -3,74 +3,101 @@ import urllib.parse
 import re
 import os
 import json
-import hashlib
 import ssl
 import time
+from datetime import datetime
 
-# SSL context for portals with certificate chain issues
+# Certificate bypass for older State NIC servers
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
-OFFICIAL_BOARDS = {
-    'JKSSB': {
+CURRENT_YEAR = str(datetime.now().year)
+PREV_YEAR = str(datetime.now().year - 1)
+
+# Authentic official job notification pages
+TARGET_SOURCES = [
+    {
+        'id': 'JKSSB',
+        'name': 'JKSSB',
+        'badge': '📌 JKSSB Recruitment',
         'url': 'https://jkssb.nic.in/',
-        'emoji': '📌',
-        'label': 'JKSSB (Services Selection Board)',
-        'fallback_base': 'https://jkssb.nic.in/'
+        'base': 'https://jkssb.nic.in/',
+        'type': 'html'
     },
-    'JKPSC': {
+    {
+        'id': 'JKPSC',
+        'name': 'JKPSC',
+        'badge': '🏢 JKPSC Official',
         'url': 'http://jkpsc.nic.in/',
-        'emoji': '🏢',
-        'label': 'JKPSC',
-        'fallback_base': 'http://jkpsc.nic.in/'
+        'base': 'http://jkpsc.nic.in/',
+        'type': 'html'
     },
-    'UPSC': {
+    {
+        'id': 'UPSC',
+        'name': 'UPSC',
+        'badge': '🏛️ UPSC All India',
         'url': 'https://www.upsc.gov.in/whats-new',
-        'emoji': '🏛️',
-        'label': 'UPSC What is New',
-        'fallback_base': 'https://www.upsc.gov.in/'
+        'base': 'https://www.upsc.gov.in/',
+        'type': 'html'
     },
-    'JammuUniv': {
+    {
+        'id': 'JU',
+        'name': 'Jammu University',
+        'badge': '🎓 Jammu Univ Jobs',
         'url': 'https://www.jammuuniversity.ac.in/job-openings',
-        'emoji': '🎓',
-        'label': 'University of Jammu',
-        'fallback_base': 'https://www.jammuuniversity.ac.in/'
+        'base': 'https://www.jammuuniversity.ac.in/',
+        'type': 'html'
     },
-    'KashmirUniv': {
+    {
+        'id': 'KU',
+        'name': 'Kashmir University',
+        'badge': '🎓 Kashmir Univ Recruitment',
         'url': 'https://www.kashmiruniversity.net/jobs.aspx',
-        'emoji': '🎓',
-        'label': 'University of Kashmir',
-        'fallback_base': 'https://www.kashmiruniversity.net/'
+        'base': 'https://www.kashmiruniversity.net/',
+        'type': 'html'
     },
-    'KVS': {
+    {
+        'id': 'KVS',
+        'name': 'KVS HQ',
+        'badge': '🏫 Kendriya Vidyalaya',
         'url': 'https://kvsangathan.nic.in/announcements',
-        'emoji': '🏫',
-        'label': 'Kendriya Vidyalaya Sangathan (KVS)',
-        'fallback_base': 'https://kvsangathan.nic.in/'
+        'base': 'https://kvsangathan.nic.in/',
+        'type': 'html'
     },
-    'RRB_Jammu': {
+    {
+        'id': 'RRB_JAMMU',
+        'name': 'RRB Jammu',
+        'badge': '🚆 Railway Recruitment Board',
         'url': 'https://www.rrbjammu.nic.in/',
-        'emoji': '🚆',
-        'label': 'RRB Jammu',
-        'fallback_base': 'https://www.rrbjammu.nic.in/'
+        'base': 'https://www.rrbjammu.nic.in/',
+        'type': 'html'
     }
-}
+]
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9'
 }
 
-RECRUIT_KEYWORDS = [
-    'recruitment', 'notification', 'advertisement', 'advt', 'vacancy', 
-    'vacancies', 'post', 'apply', 'interview', 'selection list', 'admit card', 
-    'exam date', 'result', 'candidature', 'answer key'
+# Strict keyword matching
+MANDATORY_KEYWORDS = [
+    'recruitment', 'notification', 'advertisement', 'advt', 'vacancy', 'vacancies',
+    'post of', 'posts of', 'selection list', 'provisional list', 'interview schedule',
+    'admit card', 'examination date', 'candidature', 'answer key', 'result'
+]
+
+# Blacklist words jo menu, policy ya circular se match ho jaate hain
+JUNK_PHRASES = [
+    'privacy policy', 'terms of use', 'sitemap', 'tender', 'quotation', 'auction',
+    'feedback', 'skip to', 'screen reader', 'contact us', 'about us', 'download app',
+    'copyright', 'acts & rules', 'rti act', 'citizen charter'
 ]
 
 DB_FILE = 'sent_history.json'
 
-def load_db():
+def load_history():
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, 'r', encoding='utf-8') as f:
@@ -79,89 +106,146 @@ def load_db():
             return set()
     return set()
 
-def save_db(history_set):
-    items = list(history_set)[-800:]
+def save_history(history_set):
+    # Store maximum 1200 records permanently
+    clean_list = list(history_set)[-1200:]
     with open(DB_FILE, 'w', encoding='utf-8') as f:
-        json.dump(items, f, indent=2)
+        json.dump(clean_list, f, indent=2)
 
-def clean_text(raw):
-    clean = re.sub(r'<[^>]+>', ' ', raw)
-    return re.sub(r'\s+', ' ', clean).strip()
+def clean_title(text):
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(r'&nbsp;|&amp;', ' ', text)
+    # Remove junk prefixes
+    text = re.sub(r'^(click here to view|download|view|new|notice regarding|subject:?)\s*', '', text, flags=re.I)
+    return re.sub(r'\s+', ' ', text).strip()
 
-def get_hash(text, link):
-    return hashlib.sha256(f"{text}_{link}".encode('utf-8')).hexdigest()
+def normalize_url(url):
+    # Strip unnecessary trailing tracking parameters for dedup
+    parsed = urllib.parse.urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
 
-def run():
-    history_hashes = load_db()
-    new_items_to_send = []
+def is_current_notice(text, link):
+    text_lower = text.lower()
+    link_lower = link.lower()
 
-    for key, conf in OFFICIAL_BOARDS.items():
-        try:
-            req = urllib.request.Request(conf['url'], headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=25, context=ctx) as resp:
-                html = resp.read().decode('utf-8', errors='ignore')
-        except Exception as e:
-            print(f"Skipping {key}: Fetch error ({e})")
-            continue
+    # Reject junk
+    if any(junk in text_lower for junk in JUNK_PHRASES):
+        return False
 
-        matches = re.findall(r'<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)</a>', html, re.I | re.S)
-        found_for_board = 0
+    # Check recruitment relevance
+    has_keyword = any(k in text_lower for k in MANDATORY_KEYWORDS) or ('pdf' in link_lower and any(k in link_lower for k in ['advt', 'notif', 'rec', 'job']))
+    if not has_keyword:
+        return False
 
-        for link, raw_title in matches:
-            title = clean_text(raw_title)
-            if len(title) < 12 or len(title) > 250:
-                continue
+    # Year validation: Reject historical archives (2010 to 2023)
+    old_years = [str(y) for y in range(2010, int(PREV_YEAR))]
+    for y in old_years:
+        if re.search(r'\b' + y + r'\b', text) or f"/{y}/" in link_lower or f"_{y}." in link_lower:
+            return False
 
-            link_clean = link.strip()
-            if link_clean.startswith(('#', 'javascript:', 'mailto:', 'tel:')):
-                continue
+    # Must contain current/previous year OR be explicitly from current active notice board
+    has_recent_year = (CURRENT_YEAR in text) or (PREV_YEAR in text) or (CURRENT_YEAR in link) or (PREV_YEAR in link)
+    has_date_format = bool(re.search(r'\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4}', text))
 
-            full_link = urllib.parse.urljoin(conf['fallback_base'], link_clean)
-            title_lower = title.lower()
-            is_pdf = full_link.lower().endswith('.pdf')
+    return has_recent_year or has_date_format
 
-            is_relevant = any(k in title_lower for k in RECRUIT_KEYWORDS) or is_pdf
+def fetch_page(url):
+    try:
+        req = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=20, context=ctx) as response:
+            return response.read().decode('utf-8', errors='ignore')
+    except Exception as e:
+        print(f"Error fetching {url}: {e}")
+        return ""
 
-            if not is_relevant:
-                continue
-
-            uid = get_hash(title, full_link)
-            if uid not in history_hashes:
-                new_items_to_send.append({
-                    'emoji': conf['emoji'],
-                    'label': conf['label'],
-                    'title': title,
-                    'link': full_link,
-                    'is_pdf': is_pdf,
-                    'hash': uid
-                })
-                history_hashes.add(uid)
-                found_for_board += 1
-                if found_for_board >= 2:
-                    break
-
+def scrape_and_notify():
+    history = load_history()
+    is_initial_run = (len(history) == 0)
+    new_alerts = []
+    
     token = os.environ.get('BOT_TOKEN')
     channel = os.environ.get('CHANNEL_USERNAME')
-    own_site = os.environ.get('OWN_SITE')
+    own_site = os.environ.get('OWN_SITE', 'https://sarkarisevaportal.github.io/')
 
     if not token or not channel:
-        print("Missing BOT_TOKEN or CHANNEL_USERNAME environment variables.")
+        print("BOT_TOKEN or CHANNEL_USERNAME missing.")
         return
 
-    for item in new_items_to_send:
-        pdf_badge = "📄 *Format:* Official PDF Document\n" if item['is_pdf'] else ""
-        msg = (
-            f"🔔 *New Official Recruitment Update*\n\n"
-            f"{item['emoji']} *Board:* {item['label']}\n"
-            f"📌 *Notice:* {item['title']}\n"
-            f"{pdf_badge}\n"
-            f"🔗 [Direct Official Notice / PDF Link]({item['link']})\n\n"
-            f"🌐 Portal Directory: {own_site}"
-        )
+    for src in TARGET_SOURCES:
+        html = fetch_page(src['url'])
+        if not html:
+            continue
+
+        # Extract all hyperlinks
+        matches = re.findall(r'<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)</a>', html, re.I | re.S)
+        board_sent_count = 0
+        seen_board_urls = set()
+
+        for raw_link, raw_content in matches:
+            title = clean_title(raw_content)
+            raw_link = raw_link.strip()
+
+            if len(title) < 15 or len(title) > 280:
+                continue
+
+            if raw_link.startswith(('#', 'javascript:', 'mailto:', 'tel:')):
+                continue
+
+            full_link = urllib.parse.urljoin(src['base'], raw_link)
+            clean_link = normalize_url(full_link)
+
+            # Avoid processing duplicate links on the same page
+            if clean_link in seen_board_urls:
+                continue
+            seen_board_urls.add(clean_link)
+
+            if not is_current_notice(title, full_link):
+                continue
+
+            # Unique key is the clean URL
+            if clean_link not in history:
+                is_pdf = full_link.lower().endswith('.pdf') or ('.pdf' in full_link.lower())
+                history.add(clean_link)
+
+                # First run protection: Fill history without spamming old posts
+                if is_initial_run:
+                    continue
+
+                new_alerts.append({
+                    'badge': src['badge'],
+                    'title': title,
+                    'link': full_link,
+                    'is_pdf': is_pdf
+                })
+
+                board_sent_count += 1
+                if board_sent_count >= 2:  # Maximum 2 latest updates per board per cycle
+                    break
+
+    if is_initial_run:
+        print("Initial run complete: Database initialized with existing links. No spam sent.")
+        save_history(history)
+        return
+
+    # Broadcast to Telegram
+    for item in new_alerts:
+        pdf_status = "📄 *Document:* Official PDF Available\n" if item['is_pdf'] else "🌐 *Document:* Web Notification\n"
         
+        # Professional Telegram Card Layout
+        message = (
+            f"{item['badge']}\n"
+            f"━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📢 *Subject:* {item['title']}\n\n"
+            f"{pdf_status}"
+            f"🔗 [Download / View Official Notice]({item['link']})\n\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"🏛️ *All Recruitment & UT Services:*\n"
+            f"👉 [{own_site}]({own_site})"
+        )
+
         params = urllib.parse.urlencode({
             'chat_id': channel,
-            'text': msg,
+            'text': message,
             'parse_mode': 'Markdown',
             'disable_web_page_preview': 'false'
         })
@@ -170,12 +254,12 @@ def run():
         try:
             req = urllib.request.Request(tg_url, headers=HEADERS)
             urllib.request.urlopen(req, timeout=15)
-            print(f"Sent update: {item['title'][:40]}...")
-            time.sleep(2)
+            print(f"Delivered: {item['title'][:45]}...")
+            time.sleep(3)  # Telegram flood prevention delay
         except Exception as err:
-            print(f"Failed to post telegram msg: {err}")
+            print(f"Telegram API delivery error: {err}")
 
-    save_db(history_hashes)
+    save_history(history)
 
 if __name__ == '__main__':
-    run()
+    scrape_and_notify()
